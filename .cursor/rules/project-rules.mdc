@@ -18,7 +18,7 @@ One concern per section. Follow these when editing or adding to the project.
 
 ## Project directory structure (preferred)
 
-- **Preserve this layout** when adding or moving files. **Project unit tests check every path and required file below; if any is removed or missing, `project_unit_tests_ok` fails and the pipeline does not run.**
+- **Preserve this layout** when adding or moving files. **Project unit tests check every path and required file below; if any is removed or missing, `setup_unit_tests_ok` fails and the pipeline does not run.**
 - **Root:** Required files (project unit tests check these exist):
   - **`.cursorignore`** – Cursor indexing exclusions (e.g. `_targets/`, large outputs).
   - **`.gitignore`** – Git exclusions (e.g. `analysis/data/`, `_targets/`, `.Rproj.user`).
@@ -44,7 +44,7 @@ One concern per section. Follow these when editing or adding to the project.
 - **`.gitignore`** must exist at project root so Git excludes data, outputs, and local config (e.g. `analysis/data/`, `_targets/`, `.Rproj.user`).
 - **`README.md`** must exist at project root with a short project description, folder structure, and how to run the pipeline/report.
 - Project unit tests assert that these three files exist; add or update them when changing layout or tooling.
-- **Enforcement:** Removing or renaming any required root file, directory, or subdirectory listed in "Project directory structure" must cause `project_unit_tests_ok` to fail (and thus block the rest of the pipeline).
+- **Enforcement:** Removing or renaming any required root file, directory, or subdirectory listed in "Project directory structure" must cause `setup_unit_tests_ok` to fail (and thus block the rest of the pipeline).
 - **Verification:** Run `bash analysis/scripts/setup/verify_project_structure.sh` from project root to temporarily remove each item, run project unit tests (expect failure), then restore. Confirms every structural requirement is enforced.
 
 ---
@@ -86,5 +86,5 @@ One concern per section. Follow these when editing or adding to the project.
 
 ## Unit tests: do not modify
 
-- **Do not modify the unit tests.** The definitions of `unit_tests` and `project_unit_tests` (and their assertions) must not be changed by Cursor or other edits.
+- **Do not modify the unit tests.** The definitions of `unit_tests` and `setup_unit_tests` (and their assertions) must not be changed by Cursor or other edits.
 - Fix the project or pipeline so that tests pass; do not alter the test logic or expectations.

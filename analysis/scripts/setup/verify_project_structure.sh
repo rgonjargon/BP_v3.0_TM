@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify that removing any required project structure item causes project_unit_tests_ok to fail.
+# Verify that removing any required project structure item causes setup_unit_tests_ok to fail.
 # Run from project root: bash analysis/scripts/setup/verify_project_structure.sh
 # Restores each item after testing. Requires R and targets.
 
@@ -30,18 +30,18 @@ restore_baks() {
 trap restore_baks EXIT
 
 run_tests() {
-  cd "$PIPELINE" && Rscript -e "targets::tar_invalidate(project_unit_tests); targets::tar_make(names = c('project_unit_tests', 'project_unit_tests_ok'))" 2>&1
+  cd "$PIPELINE" && Rscript -e "targets::tar_invalidate(setup_unit_tests); targets::tar_make(names = c('setup_unit_tests', 'setup_unit_tests_ok'))" 2>&1
 }
 
 check_fail() {
-  if echo "$1" | grep -q "Project unit tests failed"; then
-    echo "  OK: project_unit_tests_ok failed as expected."
+  if echo "$1" | grep -q "Setup unit tests failed"; then
+    echo "  OK: setup_unit_tests_ok failed as expected."
   else
-    echo "  WARN: expected project_unit_tests_ok to fail."
+    echo "  WARN: expected setup_unit_tests_ok to fail."
   fi
 }
 
-echo "Verifying structure enforcement (remove one item -> project_unit_tests_ok fails -> restore)."
+echo "Verifying structure enforcement (remove one item -> setup_unit_tests_ok fails -> restore)."
 echo ""
 
 # Root files
@@ -90,9 +90,9 @@ echo "Test: analysis/scripts/ missing"
 if [ -d "analysis/scripts" ]; then
   mv analysis/scripts analysis/scripts.bak
   set +e
-  out=$(cd "$ROOT/analysis/scripts.bak/pipeline" && Rscript -e "targets::tar_invalidate(project_unit_tests); targets::tar_make(names = c('project_unit_tests', 'project_unit_tests_ok'))" 2>&1); r=$?
+  out=$(cd "$ROOT/analysis/scripts.bak/pipeline" && Rscript -e "targets::tar_invalidate(setup_unit_tests); targets::tar_make(names = c('setup_unit_tests', 'setup_unit_tests_ok'))" 2>&1); r=$?
   set -e
-  if echo "$out" | grep -q "Project unit tests failed"; then echo "  OK: project_unit_tests_ok failed as expected."; elif [ "$r" -ne 0 ]; then echo "  OK: pipeline failed (exit $r)."; else echo "  WARN: expected failure."; fi
+  if echo "$out" | grep -q "Setup unit tests failed"; then echo "  OK: setup_unit_tests_ok failed as expected."; elif [ "$r" -ne 0 ]; then echo "  OK: pipeline failed (exit $r)."; else echo "  WARN: expected failure."; fi
   mv analysis/scripts.bak analysis/scripts || true
 fi
 echo ""
@@ -102,23 +102,23 @@ echo "Test: analysis/scripts/pipeline/ missing"
 if [ -d "analysis/scripts/pipeline" ]; then
   mv analysis/scripts/pipeline analysis/scripts/pipeline.bak
   set +e
-  out=$(cd analysis/scripts/pipeline.bak && Rscript -e "targets::tar_invalidate(project_unit_tests); targets::tar_make(names = c('project_unit_tests', 'project_unit_tests_ok'))" 2>&1); r=$?
+  out=$(cd analysis/scripts/pipeline.bak && Rscript -e "targets::tar_invalidate(setup_unit_tests); targets::tar_make(names = c('setup_unit_tests', 'setup_unit_tests_ok'))" 2>&1); r=$?
   set -e
-  if echo "$out" | grep -q "Project unit tests failed"; then echo "  OK: project_unit_tests_ok failed as expected."; elif [ "$r" -ne 0 ]; then echo "  OK: pipeline failed (exit $r)."; else echo "  WARN: expected failure."; fi
+  if echo "$out" | grep -q "Setup unit tests failed"; then echo "  OK: setup_unit_tests_ok failed as expected."; elif [ "$r" -ne 0 ]; then echo "  OK: pipeline failed (exit $r)."; else echo "  WARN: expected failure."; fi
   mv analysis/scripts/pipeline.bak analysis/scripts/pipeline || true
 fi
 echo ""
 
-# analysis/: run from renamed dir; failure may be project_unit_tests or qmd_file target
+# analysis/: run from renamed dir; failure may be setup_unit_tests or qmd_file target
 echo "Test: analysis/ missing"
 if [ -d "analysis" ]; then
   mv analysis analysis.bak
   set +e
-  out=$(cd analysis.bak/scripts/pipeline && Rscript -e "targets::tar_invalidate(project_unit_tests); targets::tar_make(names = c('project_unit_tests', 'project_unit_tests_ok'))" 2>&1); r=$?
+  out=$(cd analysis.bak/scripts/pipeline && Rscript -e "targets::tar_invalidate(setup_unit_tests); targets::tar_make(names = c('setup_unit_tests', 'setup_unit_tests_ok'))" 2>&1); r=$?
   set -e
-  if echo "$out" | grep -q "Project unit tests failed\|Error in tar_make\|errored"; then echo "  OK: pipeline failed as expected."; elif [ "${r:-1}" -ne 0 ]; then echo "  OK: pipeline failed (exit $r)."; else echo "  WARN: expected pipeline to fail."; fi
+  if echo "$out" | grep -q "Setup unit tests failed\|Error in tar_make\|errored"; then echo "  OK: pipeline failed as expected."; elif [ "${r:-1}" -ne 0 ]; then echo "  OK: pipeline failed (exit $r)."; else echo "  WARN: expected pipeline to fail."; fi
   mv analysis.bak analysis || true
 fi
 echo ""
 
-echo "Verification complete. All required structure items are enforced by project_unit_tests."
+echo "Verification complete. All required structure items are enforced by setup_unit_tests."

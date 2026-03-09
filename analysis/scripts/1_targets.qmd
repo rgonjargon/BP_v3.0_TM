@@ -267,7 +267,7 @@ tar_target(eff_wind_by_temp,
 ```{targets unit_tests}
 #| include: false
 #| echo: false
-# Unit tests (testthat): data and model checks; returns tibble with test name and passed/failed
+# Analysis unit tests (testthat): data and model checks; returns tibble with test name and passed/failed
 tar_target(unit_tests, {
   library(testthat)
   library(tibble)
@@ -298,18 +298,18 @@ tar_target(unit_tests, {
 ```{targets qmd_file}
 #| include: false
 #| echo: false
-# Track 1_targets.qmd so project_unit_tests invalidates when the report is edited (e.g. title change)
+# Track 1_targets.qmd so setup_unit_tests invalidates when the report is edited (e.g. title change)
 tar_target(qmd_file, {
   project_root <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
   file.path(project_root, "analysis", "scripts", "1_targets.qmd")
 }, format = "file")
 ```
 
-```{targets project_unit_tests}
+```{targets setup_unit_tests}
 #| include: false
 #| echo: false
-# Project unit tests: compliance with project rules (structure, Cursor, Quarto, git, config)
-tar_target(project_unit_tests, {
+# Setup unit tests: compliance with project rules (structure, Cursor, Quarto, git, config)
+tar_target(setup_unit_tests, {
   library(testthat)
   library(tibble)
   run_one <- function(name, expr) {
@@ -401,15 +401,15 @@ tar_target(project_unit_tests, {
 }, packages = c("testthat", "tidyverse"))
 ```
 
-```{targets project_unit_tests_ok}
+```{targets setup_unit_tests_ok}
 #| include: false
 #| echo: false
-# Gate: pipeline stops here unless all project unit tests pass
-tar_target(project_unit_tests_ok, {
-  pt <- project_unit_tests
+# Gate: pipeline stops here unless all setup unit tests pass
+tar_target(setup_unit_tests_ok, {
+  pt <- setup_unit_tests
   if (!all(pt$passed)) {
     failed <- pt$test[!pt$passed]
-    stop("Project unit tests failed: ", paste(failed, collapse = "; "))
+    stop("Setup unit tests failed: ", paste(failed, collapse = "; "))
   }
   invisible(TRUE)
 })
@@ -477,16 +477,16 @@ tryCatch({
 
 </details>
 
-<details><summary>Project unit tests</summary>
+<details><summary>Setup unit tests</summary>
 
 ```{r}
 #| echo: false
 tryCatch({
   setwd(root_dir)
-  pt <- tar_read(project_unit_tests)
+  pt <- tar_read(setup_unit_tests)
   pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
 }, error = function(e) {
-  cat("Project unit tests not available. Run the pipeline (tar_make) first.\n")
+  cat("Setup unit tests not available. Run the pipeline (tar_make) first.\n")
 })
 ```
 
@@ -578,7 +578,7 @@ tryCatch({
 })
 ```
 
-## Unit tests
+## Analysis unit tests
 
 ```{r}
 #| echo: false
@@ -587,7 +587,7 @@ tryCatch({
   pt <- tar_read(unit_tests)
   pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
 }, error = function(e) {
-  cat("Unit tests not available. Run the pipeline (tar_make) first.\n")
+  cat("Analysis unit tests not available. Run the pipeline (tar_make) first.\n")
 })
 ```
 
@@ -614,10 +614,10 @@ tryCatch({
       sd = sd(value, na.rm = TRUE),
       .groups = "drop"
     )
-  unit_tests_tbl <- tar_read(unit_tests)
-  project_unit_tests_tbl <- tar_read(project_unit_tests)
+  analysis_unit_tests_tbl <- tar_read(analysis_unit_tests)
+  setup_unit_tests_tbl <- tar_read(setup_unit_tests)
   tables_path <- file.path(tables_dir, "1_targets_report_tables.xlsx")
-  writexl::write_xlsx(list(Summary = summary_tbl, Unit_tests = unit_tests_tbl, Project_unit_tests = project_unit_tests_tbl), tables_path)
+  writexl::write_xlsx(list(Summary = summary_tbl, Analysis_unit_tests = analysis_unit_tests_tbl, Setup_unit_tests = setup_unit_tests_tbl), tables_path)
 }, error = function(e) {
   message("Could not export tables to .xlsx: ", conditionMessage(e))
 })
@@ -700,6 +700,30 @@ Bürkner, P.C., (2017). brms: An R Package for Bayesian Multilevel Models Using 
 McElreath, R. (2020). Statistical rethinking: A Bayesian course with examples in R and Stan. Chapman and Hall/CRC.
 
 R Core Team (2022). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>
+
+<details><summary>Report unit checks</summary>
+
+```{r}
+#| echo: false
+tryCatch({
+  setwd(root_dir)
+  pt_setup <- tar_read(setup_unit_tests)
+  pt_analysis <- tar_read(unit_tests)
+  final_tests <- dplyr::bind_rows(
+    dplyr::tibble(test = "All setup unit tests pass", passed = all(pt_setup$passed)),
+    dplyr::tibble(test = "All analysis unit tests pass", passed = all(pt_analysis$passed))
+  ) %>%
+    dplyr::mutate(
+      passed_html = dplyr::if_else(passed, '<span style="color:#16a34a">\u2191</span>', '<span style="color:#dc2626">\u2717</span>')
+    )
+  final_tests %>% dplyr::select(test, Passed = passed_html) %>%
+    knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
+}, error = function(e) {
+  cat("Report unit checks not available. Run the pipeline (tar_make) first.\n")
+})
+```
+
+</details>
 
 <details><summary>Session Information</summary>
 ```{r}
