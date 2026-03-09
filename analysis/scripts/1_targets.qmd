@@ -401,6 +401,23 @@ tar_target(setup_unit_tests, {
 }, packages = c("testthat", "tidyverse"))
 ```
 
+```{targets report_unit_tests}
+#| include: false
+#| echo: false
+# Report unit tests: summary of setup and analysis unit tests (for display in Report unit tests section)
+tar_target(report_unit_tests, {
+  pt_setup <- setup_unit_tests
+  pt_analysis <- analysis_unit_tests
+  dplyr::bind_rows(
+    dplyr::tibble(test = "All setup unit tests pass", passed = all(pt_setup$passed)),
+    dplyr::tibble(test = "All analysis unit tests pass", passed = all(pt_analysis$passed))
+  ) %>%
+    dplyr::mutate(
+      passed_html = dplyr::if_else(passed, '<span style="color:#16a34a">\u2191</span>', '<span style="color:#dc2626">\u2717</span>')
+    )
+}, packages = "dplyr")
+```
+
 ```{targets setup_unit_tests_ok}
 #| include: false
 #| echo: false
@@ -701,25 +718,17 @@ McElreath, R. (2020). Statistical rethinking: A Bayesian course with examples in
 
 R Core Team (2022). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>
 
-<details><summary>Report unit checks</summary>
+<details><summary>Report unit tests</summary>
 
 ```{r}
 #| echo: false
 tryCatch({
   setwd(root_dir)
-  pt_setup <- tar_read(setup_unit_tests)
-  pt_analysis <- tar_read(unit_tests)
-  final_tests <- dplyr::bind_rows(
-    dplyr::tibble(test = "All setup unit tests pass", passed = all(pt_setup$passed)),
-    dplyr::tibble(test = "All analysis unit tests pass", passed = all(pt_analysis$passed))
-  ) %>%
-    dplyr::mutate(
-      passed_html = dplyr::if_else(passed, '<span style="color:#16a34a">\u2191</span>', '<span style="color:#dc2626">\u2717</span>')
-    )
-  final_tests %>% dplyr::select(test, Passed = passed_html) %>%
+  pt <- tar_read(report_unit_tests)
+  pt %>% dplyr::select(test, Passed = passed_html) %>%
     knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
 }, error = function(e) {
-  cat("Report unit checks not available. Run the pipeline (tar_make) first.\n")
+  cat("Report unit tests not available. Run the pipeline (tar_make) first.\n")
 })
 ```
 
