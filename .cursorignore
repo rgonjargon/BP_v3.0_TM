@@ -1,0 +1,23 @@
+# Block from Cursor indexing and @-references (same syntax as .gitignore)
+
+# Data directory – do not read or index
+analysis/data/
+
+# Targets cache and generated scripts
+analysis/scripts/pipeline/_targets/
+analysis/scripts/pipeline/_targets_r/
+
+# Generated outputs (per project rules)
+analysis/output/
+
+# Quarto embedded assets (large, generated)
+analysis/scripts/1_targets_files/
+analysis/scripts/2_targets_files/
+
+# R session / IDE
+.Rhistory
+.RData
+.Rproj.user/
+
+# OS
+.DS_Store

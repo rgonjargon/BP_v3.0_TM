@@ -1,0 +1,23 @@
+# Data (sensitive or large)
+analysis/data/
+
+# R
+.Rhistory
+.RData
+.Rproj.user
+*.Rproj.user/
+
+# Targets pipeline (generated / cache)
+analysis/scripts/pipeline/_targets/
+analysis/scripts/pipeline/_targets_r/
+analysis/scripts/pipeline/_targets.R
+
+# Quarto / HTML output (generated)
+analysis/scripts/1_targets_files/
+analysis/scripts/1_targets.knit.md
+# OS
+.DS_Store
+Thumbs.db
+
+# Optional: uncomment to ignore rendered HTML
+# analysis/scripts/1_targets_report.html

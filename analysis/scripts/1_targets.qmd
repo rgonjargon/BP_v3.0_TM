@@ -1,0 +1,710 @@
+---
+title: "BP Targets Report"
+subtitle: "This report was developed using Cursor IDE with AI-assisted code and analysis editing"
+author: "Dr Tom Moore - Statistical Scientist"
+date: last-modified
+format:
+  html:
+    output-file: 1_targets_report.html
+    embed-resources: true
+    include-in-header:
+      text: |
+        <style>
+        .fig-squeeze .figure, .fig-squeeze .quarto-float-figure { margin-bottom: 0 !important; }
+        .quarto-title-block .subtitle, .subtitle { font-size: 0.85em; opacity: 0.9; font-style: italic; }
+        </style>
+    df-print: paged
+    toc: true
+    toc-location: right
+    toc-depth: 5
+    theme: united
+    highlight-style: tango
+    fig-width: 5
+    fig-height: 3
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+# Setup
+# Set root directory so targets store is found (analysis/scripts/pipeline/)
+root_dir <- getwd()
+pipeline_dir <- file.path(root_dir, "analysis", "scripts", "pipeline")
+if (!file.exists(file.path(pipeline_dir, "_targets.R"))) {
+  pipeline_dir <- file.path(root_dir, "pipeline")  # when run from analysis/scripts/
+}
+if (file.exists(file.path(pipeline_dir, "_targets.R"))) {
+  root_dir <- pipeline_dir
+}
+knitr::opts_knit$set(root.dir = root_dir)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(targets)
+library(patchwork)
+tar_unscript()
+# Project root: from pipeline dir go up 3; from analysis/scripts go up 2; else use getwd()
+project_root <- if (basename(getwd()) == "pipeline") {
+  dirname(dirname(dirname(getwd())))
+} else if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") {
+  dirname(dirname(getwd()))
+} else {
+  getwd()
+}
+# Plots, tables, and models (always under analysis/output per project rules)
+plot_dir <- file.path(project_root, "analysis", "output", "plots")
+tables_dir <- file.path(project_root, "analysis", "output", "tables")
+models_dir <- file.path(project_root, "analysis", "output", "models")
+dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
+```
+```{targets example-globals, tar_globals = TRUE}
+# Globals
+tar_option_set(format = "rds", 
+               # controller = crew::crew_controller_local(name = "HAL 9000", workers = 5, seconds_idle = 3),
+               memory = "transient",
+               garbage_collection = TRUE,
+               packages = c(
+                 "tidyverse", "janitor", "modelr", "tidybayes", "brms",
+                 "bayesplot", "ggdag", "cmdstanr", "targets", "patchwork", "testthat"))
+```
+
+
+```{targets raw-data}
+#| include: false
+#| echo: false
+# Raw data
+tar_target(raw_data, 
+           airquality
+)
+
+# read_csv(here("analysis/data/[df.file.name].csv"), show_col_types = FALSE) # Import .csv file
+# read_excel(here("analysis/data/[df.file.name].xlsx"), sheet = 1) # Import .xlsx file
+```
+```{targets wrangling}
+#| include: false
+#| echo: false
+# Wrangling (log-transform ozone for Gaussian model)
+tar_target(data, {
+  raw_data %>%
+    clean_names() %>%
+    filter(!is.na(ozone)) %>%
+    mutate(log_ozone = log(ozone))
+})
+```
+```{targets data_struct}
+#| include: false
+#| echo: false
+# Structure
+tar_target(data_struct, data)
+```
+```{targets data_summary}
+#| include: false
+#| echo: false
+# Summary
+tar_target(data_summary, data %>% summarise(across(everything(), mean)))
+```
+```{targets stan_code}
+#| include: false
+#| echo: false
+# Stan code (structural equations: temp → wind; wind + temp → log_ozone)
+tar_target(stan_code, {
+  bf_wind <- brms::bf(wind ~ temp)
+  bf_ozone <- brms::bf(log_ozone ~ wind * temp)
+  brms::stancode(bf_wind + bf_ozone + brms::set_rescor(FALSE), data = data, family = list(gaussian(), gaussian()))
+})
+```
+
+<!-- Models -->
+```{targets fit}
+#| include: false
+#| echo: false
+tar_target(fit, {
+  # Set up parallel processing
+  options(mc.cores = parallel::detectCores())
+  
+  # Structural equations: (1) temperature → wind; (2) wind + temperature → log_ozone
+  bf_wind <- brms::bf(wind ~ temp)
+  bf_ozone <- brms::bf(log_ozone ~ wind * temp)
+  mod_formula <- bf_wind + bf_ozone + brms::set_rescor(FALSE)
+  
+  priors <- c(brms::prior(normal(0, 1), class = Intercept),
+              brms::prior(normal(0, 1), class = b),
+              brms::prior(normal(0, 1), class = sigma))
+  
+  tryCatch({
+    brms::brm(mod_formula, family = list(gaussian(), gaussian()),
+        data = data,
+        threads = brms::threading(threads = NULL, grainsize = 1250, static = FALSE),
+        backend = "cmdstanr", silent = 0, refresh = 100,
+        chains = 4, cores = 4, warmup = 1000, iter = 2000)
+  }, error = function(e) {
+    brms::brm(mod_formula, family = list(gaussian(), gaussian()),
+        data = data,
+        backend = "rstan", silent = 0, refresh = 100,
+        chains = 4, cores = 4, warmup = 1000, iter = 2000)
+  })
+})
+```
+
+```{targets fit_saved}
+#| include: false
+#| echo: false
+# Save Bayesian fit to analysis/output/models (per project rules); runs after fit so file is always written
+tar_target(fit_saved, {
+  pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
+  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") pr <- dirname(dirname(getwd()))
+  models_dir <- file.path(pr, "analysis", "output", "models")
+  dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
+  path <- file.path(models_dir, "bayesian_fit.rds")
+  saveRDS(fit, path)
+  path
+}, format = "file")
+```
+
+```{targets dag}
+#| include: false
+#| echo: false
+# DAG for structural equations: temp → wind; temp, wind → log_ozone
+tar_target(dag, {
+  ggdag_status(
+    dagify(
+      wind ~ temp,
+      log_ozone ~ wind + temp,
+      exposure = "temp",
+      outcome = "log_ozone"
+    ), layout = "nicely"
+  ) + theme_dag()
+})
+```
+
+```{targets pp_check}
+#| include: false
+#| echo: false
+# Validation
+tar_target(pp_check, brms::pp_check(fit, "dens_overlay", resp = "logozone") + theme_classic())
+```
+
+<!-- Raw plots -->
+```{targets plot_ozone_wind}
+#| include: false
+#| echo: false
+tar_target(plot_ozone_wind, {
+  temp_cond <- quantile(data$temp, 0.9)
+  pred_grid <- data %>%
+    data_grid(wind = seq_range(wind, n = 200), temp = temp_cond) %>%
+    add_epred_draws(fit, ndraws = 100) %>%
+    filter(.category == "logozone") %>%
+    mutate(.epred = exp(.epred))
+  ggplot(pred_grid, aes(x = wind, y = .epred)) +
+    theme_classic() +
+    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#619CFF", color = "black") +
+    geom_point(data = data, aes(x = wind, y = ozone), shape = 21, size = 2, inherit.aes = FALSE) +
+    scale_fill_brewer() +
+    labs(
+      title = "Ozone vs wind",
+      subtitle = paste0("Temp held at 90th percentile (", round(temp_cond, 1), " °F)"),
+      y = "Ozone", x = "Wind"
+    )
+})
+```
+
+```{targets plot_ozone_temp}
+#| include: false
+#| echo: false
+tar_target(plot_ozone_temp, {
+  pred_grid <- data %>%
+    data_grid(temp = seq_range(temp, n = 200), wind = mean(wind)) %>%
+    add_epred_draws(fit, ndraws = 100) %>%
+    filter(.category == "logozone") %>%
+    mutate(.epred = exp(.epred))
+  wind_val <- round(mean(data$wind), 1)
+  ggplot(pred_grid, aes(x = temp, y = .epred)) +
+    theme_classic() +
+    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#619CFF", color = "black") +
+    geom_point(data = data, aes(x = temp, y = ozone), shape = 21, size = 2, inherit.aes = FALSE) +
+    scale_fill_brewer() +
+    labs(
+      title = "Ozone vs temperature",
+      subtitle = paste0("Wind held at mean (", wind_val, " mph)"),
+      y = "Ozone", x = "Temp")
+})
+```
+
+
+<!-- Effect plots -->
+```{targets eff_wind_by_temp}
+#| include: false
+#| echo: false
+tar_target(eff_wind_by_temp,
+  {
+    cond <- data.frame(temp = quantile(data$temp, probs = c(0.25, 0.75)))
+    temp_vals <- round(cond$temp, 1)
+    ce <- conditional_effects(fit, effects = "wind", conditions = cond, re_formula = NA)
+    dfs <- ce[sapply(ce, is.data.frame)]
+    c_eff <- if (length(dfs) >= 2L) dfs[[2L]] else dfs[[1L]]
+    c_eff <- c_eff %>% mutate(across(c(estimate__, lower__, upper__), exp))
+    ggplot(c_eff, aes(x = effect1__, y = estimate__, ymin = lower__, ymax = upper__,
+                      fill = cond__, color = cond__)) +
+      theme_classic() +
+      theme(legend.position = "bottom") +
+      geom_ribbon(alpha = 0.3, colour = NA) +
+      geom_line(size = 1.5) +
+      labs(
+        title = "Effect of wind on ozone",
+        subtitle = paste0("Temperature held at 25th and 75th percentiles (", paste(temp_vals, collapse = " and "), " °F)"),
+        y = "Ozone", x = "Wind"
+      ) +
+      guides(fill = guide_legend(title = "Temp (°F)"), color = guide_legend(title = "Temp (°F)"))
+  }
+)
+```
+
+```{targets unit_tests}
+#| include: false
+#| echo: false
+# Unit tests (testthat): data and model checks; returns tibble with test name and passed/failed
+tar_target(unit_tests, {
+  library(testthat)
+  library(tibble)
+  run_one <- function(name, expr) {
+    tryCatch(
+      { force(expr); tibble(test = name, passed = TRUE) },
+      error = function(e) tibble(test = name, passed = FALSE)
+    )
+  }
+  dplyr::bind_rows(
+    run_one("Data: no NA in ozone", testthat::expect_true(all(!is.na(data$ozone)))),
+    run_one("Data: required columns (ozone, wind, temp, log_ozone)", testthat::expect_true(all(c("ozone", "wind", "temp", "log_ozone") %in% names(data)))),
+    run_one("Data: n > 0", testthat::expect_true(nrow(data) > 0L)),
+    run_one("Data: ozone positive", testthat::expect_true(all(data$ozone > 0, na.rm = TRUE))),
+    run_one("Data: log_ozone is numeric", testthat::expect_true(is.numeric(data$log_ozone))),
+    run_one("Model: converged (Rhat < 1.05)", testthat::expect_true(all(brms::rhat(fit) < 1.05, na.rm = TRUE))),
+    run_one("Model: has wind and temp terms", testthat::expect_true(any(grepl("wind", rownames(brms::fixef(fit)))) && any(grepl("temp", rownames(brms::fixef(fit)))))),
+    run_one("Model: bivariate (2 responses)", testthat::expect_true(length(fit$formula) >= 2L))
+  ) %>%
+    dplyr::arrange(passed) %>%
+    dplyr::mutate(
+      passed_display = dplyr::if_else(passed, "\u2191", "\u2717"),
+      passed_html = dplyr::if_else(passed, '<span style="color:#16a34a">\u2191</span>', '<span style="color:#dc2626">\u2717</span>')
+    )
+}, packages = c("testthat", "tidyverse", "brms"))
+```
+
+```{targets qmd_file}
+#| include: false
+#| echo: false
+# Track 1_targets.qmd so project_unit_tests invalidates when the report is edited (e.g. title change)
+tar_target(qmd_file, {
+  project_root <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
+  file.path(project_root, "analysis", "scripts", "1_targets.qmd")
+}, format = "file")
+```
+
+```{targets project_unit_tests}
+#| include: false
+#| echo: false
+# Project unit tests: compliance with project rules (structure, Cursor, Quarto, git, config)
+tar_target(project_unit_tests, {
+  library(testthat)
+  library(tibble)
+  run_one <- function(name, expr) {
+    tryCatch(
+      { force(expr); tibble(test = name, passed = TRUE) },
+      error = function(e) tibble(test = name, passed = FALSE)
+    )
+  }
+  pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
+  qmd_path <- qmd_file
+  p <- function(...) file.path(pr, ...)
+  read_txt <- function(path) paste(readLines(path, warn = FALSE), collapse = " ")
+
+  dirs <- setNames(c("analysis", "analysis/data", "analysis/output", "analysis/output/models", "analysis/output/plots", "analysis/output/tables", "analysis/scripts", "analysis/scripts/pipeline", "analysis/scripts/setup", "docs", ".cursor/rules"),
+    c("Directory: analysis/", "Directory: analysis/data/", "Directory: analysis/output/", "Directory: analysis/output/models/", "Directory: analysis/output/plots/", "Directory: analysis/output/tables/", "Directory: analysis/scripts/", "Directory: analysis/scripts/pipeline/", "Directory: analysis/scripts/setup/", "Directory: docs/", "Directory: .cursor/rules"))
+  dir_tests <- lapply(seq_along(dirs), function(i) run_one(paste0(names(dirs)[i], " exists"), testthat::expect_true(dir.exists(p(dirs[i])))))
+
+  files <- setNames(c(".cursorignore", ".gitignore", "README.md"), c("File: .cursorignore", "File: .gitignore", "File: README.md"))
+  file_tests <- lapply(seq_along(files), function(i) run_one(paste0(names(files)[i], " at root"), testthat::expect_true(file.exists(p(files[i])))))
+  rproj_test <- list(run_one("File: .Rproj at root", testthat::expect_true(length(list.files(pr, pattern = "\\.Rproj$")) >= 1L)))
+
+  qmd <- if (file.exists(qmd_path)) read_txt(qmd_path) else ""
+  git <- function(...) tryCatch(system2("git", c(...), stdout = TRUE, stderr = FALSE), error = function(e) character(0))
+  gi <- if (file.exists(p(".gitignore"))) read_txt(p(".gitignore")) else ""
+  ci <- if (file.exists(p(".cursorignore"))) read_txt(p(".cursorignore")) else ""
+
+  report_tests <- list(
+    run_one("Cursor transparency: subtitle mentions Cursor", testthat::expect_true(grepl("subtitle:.*[Cc]ursor", qmd))),
+    run_one("Quarto: title not default", testthat::expect_false(grepl('title:\\s*["\']New Document["\']', qmd))),
+    run_one("Quarto: .qmd in analysis/scripts/", testthat::expect_true(length(list.files(p("analysis", "scripts"), pattern = "\\.qmd$")) >= 1L)),
+    run_one("Quarto only: no .Rmd in analysis/scripts/", testthat::expect_true(length(list.files(p("analysis", "scripts"), pattern = "\\.Rmd$")) == 0L))
+  )
+  git_tests <- list(
+    run_one("Git: is repository", testthat::expect_true(dir.exists(p(".git")) || identical(git("rev-parse", "--is-inside-work-tree"), "true"))),
+    run_one("Git: branch is main", testthat::expect_true(git("branch", "--show-current") %in% c("main", "master"))),
+    run_one("Git: working tree clean", testthat::expect_true(length(git("status", "--porcelain")) == 0L)),
+    run_one("Git: remote origin", testthat::expect_true("origin" %in% git("remote", "show")))
+  )
+  config_tests <- list(
+    run_one("README: mentions pipeline/run", testthat::expect_true(grepl("pipeline|quarto|run|quick start", read_txt(p("README.md")), ignore.case = TRUE))),
+    run_one(".gitignore: excludes analysis/data", testthat::expect_true(grepl("analysis/data", gi, fixed = TRUE))),
+    run_one(".gitignore: excludes _targets", testthat::expect_true(grepl("_targets", gi))),
+    run_one("Project rules: project-rules.mdc", {
+      testthat::expect_true(file.exists(p(".cursor", "rules", "project-rules.mdc")))
+      testthat::expect_true(grepl("Quarto|analysis|Cursor", read_txt(p(".cursor", "rules", "project-rules.mdc"))))
+    }),
+    run_one("Output writable: analysis/output/plots", {
+      tf <- p("analysis", "output", "plots", ".proj_test"); dir.create(dirname(tf), recursive = TRUE, showWarnings = FALSE)
+      writeLines("x", tf); on.exit(unlink(tf, force = TRUE), add = TRUE)
+      testthat::expect_true(file.exists(tf)); unlink(tf, force = TRUE)
+    }),
+    run_one("No top-level scripts/ (per rules)", testthat::expect_false(dir.exists(p("scripts")))),
+    run_one(".cursorignore: excludes _targets or output", testthat::expect_true(grepl("_targets|output", ci))),
+    run_one("Output writable: analysis/output/tables", {
+      tf <- p("analysis", "output", "tables", ".proj_test"); dir.create(dirname(tf), recursive = TRUE, showWarnings = FALSE)
+      writeLines("x", tf); on.exit(unlink(tf, force = TRUE), add = TRUE)
+      testthat::expect_true(file.exists(tf)); unlink(tf, force = TRUE)
+    }),
+    run_one("Report YAML: has output-file", testthat::expect_true(grepl("output-file|output_file", qmd))),
+    run_one("R version >= 4.0", testthat::expect_true(getRversion() >= "4.0.0"))
+  )
+
+  # Pipeline packages (must match tar_option_set(packages = ...) in globals)
+  pipeline_packages <- c(
+    "tidyverse", "janitor", "modelr", "tidybayes", "brms",
+    "bayesplot", "ggdag", "cmdstanr", "targets", "patchwork", "testthat"
+  )
+  package_tests <- lapply(pipeline_packages, function(pkg) {
+    run_one(paste0("Package: ", pkg), {
+      ok <- suppressPackageStartupMessages(suppressWarnings(require(pkg, character.only = TRUE, quietly = TRUE)))
+      testthat::expect_true(ok)
+    })
+  })
+
+  software_tests <- list(
+    run_one("Software: R available", testthat::expect_true(nzchar(R.version.string))),
+    run_one("Software: Quarto (quarto --version)", {
+      code <- tryCatch(system2("quarto", "--version", stdout = FALSE, stderr = FALSE), error = function(e) 1L)
+      testthat::expect_true(code == 0L)
+    })
+  )
+
+  out <- dplyr::bind_rows(c(dir_tests, file_tests, rproj_test, report_tests, git_tests, config_tests, package_tests, software_tests))
+  out %>% dplyr::arrange(passed) %>%
+    dplyr::mutate(
+      passed_display = dplyr::if_else(passed, "\u2191", "\u2717"),
+      passed_html = dplyr::if_else(passed, '<span style="color:#16a34a">\u2191</span>', '<span style="color:#dc2626">\u2717</span>')
+    )
+}, packages = c("testthat", "tidyverse"))
+```
+
+```{targets project_unit_tests_ok}
+#| include: false
+#| echo: false
+# Gate: pipeline stops here unless all project unit tests pass
+tar_target(project_unit_tests_ok, {
+  pt <- project_unit_tests
+  if (!all(pt$passed)) {
+    failed <- pt$test[!pt$passed]
+    stop("Project unit tests failed: ", paste(failed, collapse = "; "))
+  }
+  invisible(TRUE)
+})
+```
+
+<details><summary>Pipeline</summary>
+
+```{r}
+#| label: visnet
+#| echo: false
+#| fig-height: 6
+#| fig-width: 9
+#| out-width: 75%
+library(visNetwork)
+tar_visnetwork(
+  targets_only = TRUE,
+  label = "description",
+  label_width = 28,
+  level_separation = 120,
+  outdated = TRUE
+) |>
+  visNodes(
+    font = list(size = 14, face = "sans"),
+    shape = "box",
+    color = list(
+      background = "#f0f4f8",
+      border = "#475569",
+      highlight = list(background = "#e2e8f0", border = "#334155")
+    ),
+    margin = 8,
+    shadow = TRUE
+  ) |>
+  visEdges(
+    color = list(color = "#94a3b8", highlight = "#64748b"),
+    smooth = list(type = "cubicBezier", roundness = 0.4),
+    width = 1.5,
+    arrows = list(to = list(enabled = TRUE, scaleFactor = 0.6))
+  ) |>
+  visOptions(
+    highlightNearest = list(enabled = TRUE, degree = 1, hover = TRUE),
+    nodesIdSelection = FALSE
+  ) |>
+  visLegend(enabled = FALSE) |>
+  visLayout(improvedLayout = TRUE)
+```
+
+```{r}
+#| label: pipeline
+#| echo: false
+tryCatch({
+  tar_make(reporter = "verbose_positives",
+           garbage_collection = TRUE)
+}, error = function(e) {
+  cat("Note: Pipeline execution encountered an error:", conditionMessage(e), "\n")
+  cat("Some targets may not be available. Check tar_meta() for details.\n")
+})
+```
+
+```{r}
+#| label: crew
+#| echo: false
+#| eval: false
+# tar_crew()  # Disabled - controller not configured
+```
+
+</details>
+
+<details><summary>Project unit tests</summary>
+
+```{r}
+#| echo: false
+tryCatch({
+  setwd(root_dir)
+  pt <- tar_read(project_unit_tests)
+  pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
+}, error = function(e) {
+  cat("Project unit tests not available. Run the pipeline (tar_make) first.\n")
+})
+```
+
+</details>
+
+<!-- #################### REPORT #################### -->
+
+# Experiment and Data
+
+The analysis uses the **airquality** dataset: daily ozone concentration (ppb), wind speed (mph), and temperature (°F) in New York (May–September 1973). After cleaning variable names and removing rows with missing ozone, the data were used to model ozone as a function of wind and temperature and their interaction.
+
+# Methods
+
+A Bayesian regression model was fitted in R (R Core Team 2022) using the **brms** package (Bürkner, 2017) with the **cmdstanr** backend. The model was a **structural equation model** with two equations: (1) **wind** is regressed on **temperature** (temperature causally affects wind); (2) **log(ozone)** (ozone log-transformed) is regressed on **wind**, **temperature**, and their **interaction**, with a Gaussian distribution. So temperature affects ozone both directly and indirectly via wind (`wind ~ temp`; `log_ozone ~ wind * temp`). The model was fitted with 4 chains, 1000 warmup and 2000 iterations per chain. Model validation relied on posterior predictive checks (density overlay) and standard MCMC diagnostics (Rhat and effective sample size) (McElreath, 2020).
+
+<details><summary>Why Bayesian?</summary>
+- This framework is particularly useful for the analysis of complex data sets with temporal and spatial (hierarchical) structures and is highly flexible to model the data generating process: <https://doi.org/10.1007/s10144-015-0503-4></details>
+
+## Analysis
+
+::: {.panel-tabset}
+
+## Data
+
+```{r}
+#| echo: false
+d <- tar_read(data_struct)
+str(d)
+head(d)
+```
+
+## Summary
+
+```{r}
+#| echo: false
+library(tidyverse)
+d <- tar_read(data_struct)
+d %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  group_by(variable) %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    median = median(value, na.rm = TRUE),
+    range = paste(round(min(value, na.rm = TRUE), 2), "-", round(max(value, na.rm = TRUE), 2)),
+    sd = sd(value, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+## Models
+
+```{r}
+#| echo: false
+tryCatch({
+  fit_obj <- tar_read(fit)
+  print(fit_obj)
+}, error = function(e) {
+  cat("Model fit not available. Run the pipeline to generate targets.\n")
+})
+```
+
+**Stancode**
+
+```{r}
+#| echo: false
+tryCatch({
+  tar_read(stan_code)
+}, error = function(e) {
+  cat("Stan code not available. Run the pipeline to generate targets.\n")
+})
+```
+
+## Validation
+
+```{r}
+#| echo: false
+#| message: false
+#| fig-show: hold
+#| out-width: 50%
+#| fig-width: 4
+#| fig-height: 2
+tryCatch({
+  p <- tar_read(pp_check)
+  ggplot2::ggsave(file.path(plot_dir, "pp_check.png"), p, width = 4, height = 2, dpi = 600)
+  p
+}, error = function(e) {
+  cat("Validation plot not available.\n")
+})
+```
+
+## Unit tests
+
+```{r}
+#| echo: false
+tryCatch({
+  setwd(root_dir)
+  pt <- tar_read(unit_tests)
+  pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
+}, error = function(e) {
+  cat("Unit tests not available. Run the pipeline (tar_make) first.\n")
+})
+```
+
+:::
+
+```{r}
+#| label: export-tables
+#| echo: false
+#| include: false
+# Export final tables to single .xlsx (per project rules: analysis/output/tables/)
+setwd(root_dir)
+tryCatch({
+  library(tidyverse)
+  library(writexl)
+  d <- tar_read(data_struct)
+  summary_tbl <- d %>%
+    select(where(is.numeric)) %>%
+    pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+    group_by(variable) %>%
+    summarise(
+      mean = mean(value, na.rm = TRUE),
+      median = median(value, na.rm = TRUE),
+      range = paste(round(min(value, na.rm = TRUE), 2), "-", round(max(value, na.rm = TRUE), 2)),
+      sd = sd(value, na.rm = TRUE),
+      .groups = "drop"
+    )
+  unit_tests_tbl <- tar_read(unit_tests)
+  project_unit_tests_tbl <- tar_read(project_unit_tests)
+  tables_path <- file.path(tables_dir, "1_targets_report_tables.xlsx")
+  writexl::write_xlsx(list(Summary = summary_tbl, Unit_tests = unit_tests_tbl, Project_unit_tests = project_unit_tests_tbl), tables_path)
+}, error = function(e) {
+  message("Could not export tables to .xlsx: ", conditionMessage(e))
+})
+```
+
+### Causal diagram
+<details><summary>i</summary>
+- A causal diagram (DAG) is a flowchart that maps out the causal relationships between the exposure (X) and outcome (Y), along with additional variables that may affect the X and Y association.
+
+- As such a causal diagram is a graphical representation of the hypothesis and summary of a modeling approach.
+
+- A biologist's guide to model selection and causal inference: <https://doi.org/10.1098/rspb.2020.2815></details>
+```{r}
+#| echo: false
+#| out-width: 75%
+#| fig-height: 3
+#| fig-width: 9
+setwd(root_dir)
+tryCatch({
+  d <- tar_read(dag)
+  ggplot2::ggsave(file.path(plot_dir, "causal_dag.png"), d, width = 9, height = 3, dpi = 600)
+  d
+}, error = function(e) {
+  cat("DAG not available.\n")
+})
+```
+
+Figure 1: Causal diagram (DAG) for the structural equations: temperature causally affects wind; temperature and wind affect log(ozone). Arrows indicate the direction of the hypothesized effects.
+
+### Raw plots
+```{r}
+#| echo: false
+#| message: false
+#| fig-width: 8
+#| fig-height: 3.5
+#| out-width: 100%
+tryCatch({
+  setwd(root_dir)
+  p_wind <- tar_read(plot_ozone_wind)
+  p_temp <- tar_read(plot_ozone_temp)
+  p_combined <- p_wind + p_temp + plot_layout(ncol = 2)
+  ggplot2::ggsave(file.path(plot_dir, "ozone_vs_wind_raw.png"), p_wind, width = 4, height = 3.5, dpi = 600)
+  ggplot2::ggsave(file.path(plot_dir, "ozone_vs_temp_raw.png"), p_temp, width = 4, height = 3.5, dpi = 600)
+  ggplot2::ggsave(file.path(plot_dir, "raw_plots_ozone_wind_temp.png"), p_combined, width = 8, height = 3.5, dpi = 600)
+  p_combined
+}, error = function(e) {
+  cat("Raw plots not available. Run the pipeline (tar_make) first.\n")
+})
+```
+Figure 2: Observed ozone (points) and posterior predictions from the Gaussian model for log(ozone), back-transformed to ozone scale. Left: ozone vs wind (mph). Right: ozone vs temperature (°F). Shaded bands show the 95% credible interval; the solid line is the posterior median.
+
+### Effect plots
+```{r}
+#| echo: false
+#| message: false
+#| fig-show: hold
+#| fig-width: 8
+#| fig-height: 4
+#| out-width: 100%
+#| classes: "fig-squeeze"
+tryCatch({
+  setwd(root_dir)
+  p_eff <- tar_read(eff_wind_by_temp)
+  ggplot2::ggsave(file.path(plot_dir, "effect_wind_by_temp.png"), p_eff, width = 8, height = 4, dpi = 600)
+  p_eff
+}, error = function(e) {
+  cat("Effect plot not available.\n")
+})
+```
+Figure 3: Interaction effect of wind on ozone at low vs high temperature (25th and 75th percentiles of temp). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates temperature level.
+
+## Results
+
+The causal diagram (Figure 1) encodes the assumption that wind and temperature influence ozone. The raw plots (Figure 2) show that observed ozone tends to decrease with higher wind and to increase with higher temperature, with the model capturing these patterns and uncertainty. The interaction effect plot (Figure 3) shows how the effect of wind on ozone differs at low vs high temperature; non-parallel curves indicate an interaction. In this Bayesian framework, a predictor is typically considered to have a meaningful effect when its 95% credible interval excludes zero.
+
+# References
+
+Bürkner, P.C., (2017). brms: An R Package for Bayesian Multilevel Models Using Stan. Journal of Statistical Software, 80(1), 1-28. <https://econpapers.repec.org/article/jssjstsof/v_3a080_3ai01.htm>
+
+McElreath, R. (2020). Statistical rethinking: A Bayesian course with examples in R and Stan. Chapman and Hall/CRC.
+
+R Core Team (2022). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>
+
+<details><summary>Session Information</summary>
+```{r}
+#| label: session-info
+# Template version 2.6
+utils::sessionInfo()
+```
+</details>
