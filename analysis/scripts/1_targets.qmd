@@ -1,5 +1,5 @@
 ---
-title: "BP Targets Report"
+title: "New Document"
 subtitle: "This report was developed using Cursor IDE with AI-assisted code and analysis editing"
 author: "Dr Tom Moore - Statistical Scientist"
 date: last-modified

@@ -11,6 +11,7 @@ All rules live in a single file:
 | File | Description |
 |------|-------------|
 | **project-rules.mdc** | Project rules and conventions. Edit this file to add or change rules (e.g. Quarto-only reports, style, patterns). |
+| **plan.md** (in `docs/`) | Current plan or saved Cursor Plan Mode output; use for task context. |
 
 ---
 

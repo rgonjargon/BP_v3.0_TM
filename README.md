@@ -39,3 +39,7 @@ R + Quarto project: targets pipeline and analysis reports.
 
 4. **Open the report**  
    `analysis/scripts/1_targets_report.html`
+
+## Documentation
+
+- **Current plan / roadmap:** see `docs/plan.md`.
