@@ -1,0 +1,23 @@
+name|type|data|command|depend|seed|path|time|size|bytes|format|repository|iteration|parent|children|seconds|warnings|error
+analysis_unit_tests|stem|a1853368c491cc2e|1421fd96db7ba49f|a71d36c9863bdb16|-437825468||t20521.0916955206s|s391b|391|rds|local|vector|||0.034||
+report_unit_checks|stem|dbdb2eb7807a4837|c57c2bc06dc18f08|f0f0fbba4dde6ec8|-426874321||t20521.0917133629s|s242b|242|rds|local|vector|||0.001||
+raw_data|stem|5358394619e2c14d|2678cac15332ebde|2c530c1562a7fbd1|195724309||t20522.9602964691s|s1263b|1263|rds|local|vector|||1.617||
+data|stem|6eba666a6ffad05b|700640583db75cf7|de4f1f3d0a152da4|-1767041714||t20522.9603038138s|s1727b|1727|rds|local|vector|||0.02||
+fit|stem|16f6ba0029cc1468|0ebc595f31c955a0|bbce0a397ae28078|1172058426||t20522.9604162675s|s458390b|458390|rds|local|vector|||9.344||
+stan_code|stem|4a7227680894987d|73f504b2f4883d47|bbce0a397ae28078|927963037||t20522.9604188174s|s901b|901|rds|local|vector|||0.051||
+data_summary|stem|03c860481d744062|0469d3d3afafb1c7|bbce0a397ae28078|-1815125725||t20522.9604202587s|s223b|223|rds|local|vector|||0.002||
+data_struct|stem|6eba666a6ffad05b|ee0b6a6bc571b6d1|bbce0a397ae28078|1863290697||t20522.9604216728s|s1727b|1727|rds|local|vector|||0||
+project_rules_file|stem|08627cb7725148be|8ab43296d916e99a|2c530c1562a7fbd1|-828772361|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/.cursor/rules/project-rules.mdc|t20521.0784385384s|s5507b|5507|file|local|vector|||0||
+install_packages_file|stem|edce1bb97db006a9|8836ccb8421fd6a9|2c530c1562a7fbd1|614877086|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/analysis/scripts/setup/install_packages.R|t20523.0022325851s|s509b|509|file|local|vector|||0||
+readme_file|stem|f169056bb4740e54|9cf6c36369a54fd2|2c530c1562a7fbd1|147683478|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/README.md|t20523.0022323223s|s2124b|2124|file|local|vector|||0||
+unit_tests|stem|a1853368c491cc2e|1421fd96db7ba49f|0f0ab2d6588c4759|-592840310||t20523.0024711435s|s391b|391|rds|local|vector|||0.043||
+pp_check|stem|e433d7e2d2d95733|4177bb2241c619c9|5f130437e6a7bd12|347380472||t20523.0024798384s|s301809b|301809|rds|local|vector|||0.128||
+fit_saved|stem|4dee71ba03a20447|e89d2d293229ffae|5f130437e6a7bd12|16215329|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/analysis/output/models/bayesian_fit.rds|t20523.0024816796s|s458400b|458400|file|local|vector|||0.017||
+report_unit_tests|stem|3d5f9685153ef424|7afdad44dbdeacf1|523b9b27c5d456bd|-433637282||t20523.0024944001s|s349b|349|rds|local|vector|||0.003||
+plot_ozone_temp|stem|0977271c1ccbf894|0571c53ff7f6d7cf|0f0ab2d6588c4759|-1255456292||t20523.0166287205s|s1366635b|1366635|rds|local|vector|||0.433||
+plot_ozone_wind|stem|80c95254600fbe09|e0154afec9442e66|0f0ab2d6588c4759|-362958099||t20523.0166330204s|s1370090b|1370090|rds|local|vector|||0.123||
+eff_wind_by_temp|stem|5d6d1b4a829f9f44|3526b7d2b808f10f|0f0ab2d6588c4759|-223183422||t20523.0166411572s|s771817b|771817|rds|local|vector|||0.503||
+dag|stem|ddc08b525898aca4|6b503ae8ffb691f0|2c530c1562a7fbd1|1359800161||t20523.0245861394s|s391550b|391550|rds|local|vector|||0.2|There was 1 warning in `dplyr::mutate()`. ℹ In argument: `label = dplyr::case_match(...)`. Caused by warning: ! `case_match()` was deprecated in dplyr 1.2.0. ℹ Please use `recode_values()` instead.|
+qmd_file|stem|3a9e92e7b5a7337b|4a8a72f4917906a1|2c530c1562a7fbd1|-1893654431|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/analysis/scripts/1_targets.qmd|t20523.0282417213s|s31775b|31775|file|local|vector|||1.144||
+setup_unit_tests|stem|3eeb097f8ecf12ab|0140137e2928bcae|15ab152e4618920e|-2081983787||t20523.0290597447s|s817b|817|rds|local|vector|||0.103||
+setup_unit_tests_ok|stem|bfc7e9c51e23c8db|5bc4155a936c76ef|b83c97ca16de787c|1200427367||t20523.0290608993s|s48b|48|rds|local|vector|||0.001||
