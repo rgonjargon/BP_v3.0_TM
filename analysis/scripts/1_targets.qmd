@@ -1,6 +1,6 @@
 ---
 title: "Ozone analysis report"
-subtitle: "This report was developed using Cursor IDE with AI-assisted code and analysis editing"
+subtitle: "This report was developed with assistance from Cursor."
 author: "Dr Tom Moore - Statistical Scientist"
 date: last-modified
 format:
@@ -211,7 +211,8 @@ tar_target(dag, {
       values = c(Exposure = "#882255", Mediator = "#6699CC", Outcome = "#999933"),
       guide = "none"
     ) +
-    ggdag::theme_dag()
+    ggdag::theme_dag() +
+    ggplot2::theme(plot.margin = ggplot2::margin(12, 12, 12, 12))
 })
 ```
 
@@ -736,14 +737,14 @@ tryCatch({
 setwd(root_dir)
 tryCatch({
   d <- tar_read(dag)
-  ggplot2::ggsave(file.path(plot_dir, "causal_dag.png"), d, width = 6, height = 3, dpi = 600)
+  ggplot2::ggsave(file.path(plot_dir, "causal_dag.png"), d, width = 6, height = 4.5, dpi = 600)
   d
 }, error = function(e) {
   cat("DAG not available.\n")
 })
 ```
 
-Figure 1: Causal diagram (DAG): exposure (temp) → mediator (wind) → outcome (log_ozone), left to right. Arrows show the direction of effects.
+Figure 1: Causal diagram (DAG): exposure (temp), mediator (wind), and outcome (log_ozone).
 
 ### Raw plots
 ```{r}
