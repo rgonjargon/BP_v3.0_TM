@@ -235,13 +235,12 @@ tar_target(plot_ozone_wind, {
     mutate(.epred = exp(.epred))
   ggplot(pred_grid, aes(x = wind, y = .epred)) +
     theme_classic() +
-    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#619CFF", color = "black") +
+    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#6699CC", color = "black") +
     geom_point(data = data, aes(x = wind, y = ozone), shape = 21, size = 2, inherit.aes = FALSE) +
-    scale_fill_brewer() +
     labs(
       title = "Ozone vs wind",
       subtitle = paste0("Temp held at 90th percentile (", round(temp_cond, 1), " °F)"),
-      y = "Ozone", x = "Wind"
+      y = "Ozone (ppb)", x = "Wind (mph)"
     )
 })
 ```
@@ -258,13 +257,12 @@ tar_target(plot_ozone_temp, {
   wind_val <- round(mean(data$wind), 1)
   ggplot(pred_grid, aes(x = temp, y = .epred)) +
     theme_classic() +
-    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#619CFF", color = "black") +
+    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#882255", color = "black") +
     geom_point(data = data, aes(x = temp, y = ozone), shape = 21, size = 2, inherit.aes = FALSE) +
-    scale_fill_brewer() +
     labs(
       title = "Ozone vs temperature",
       subtitle = paste0("Wind held at mean (", wind_val, " mph)"),
-      y = "Ozone", x = "Temp")
+      y = "Ozone (ppb)", x = "Temp (°F)")
 })
 ```
 
@@ -286,13 +284,14 @@ tar_target(eff_wind_by_temp,
       theme_classic() +
       theme(legend.position = "bottom") +
       geom_ribbon(alpha = 0.3, colour = NA) +
-      geom_line(size = 1.5) +
+      geom_line(linewidth = 1.5) +
+      scale_fill_manual(values = c("#882255", "#6699CC"), name = "Temp (°F)") +
+      scale_color_manual(values = c("#882255", "#6699CC"), name = "Temp (°F)") +
       labs(
         title = "Effect of wind on ozone",
         subtitle = paste0("Temperature held at 25th and 75th percentiles (", paste(temp_vals, collapse = " and "), " °F)"),
         y = "Ozone", x = "Wind"
-      ) +
-      guides(fill = guide_legend(title = "Temp (°F)"), color = guide_legend(title = "Temp (°F)"))
+      )
   }
 )
 ```
