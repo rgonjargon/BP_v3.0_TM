@@ -4,7 +4,7 @@ R + Quarto project: targets pipeline and analysis reports.
 
 ## Folder structure
 
-```
+```text
 ├── analysis/           # Data, outputs, and pipeline
 │   ├── data/           # Raw and processed data (git-ignored)
 │   ├── output/         # Generated outputs
@@ -39,6 +39,14 @@ R + Quarto project: targets pipeline and analysis reports.
 
 4. **Open the report**  
    `analysis/scripts/1_targets_report.html`
+
+## Reproducibility
+
+For reproducible results:
+
+- Use **R ≥ 4.0**. The pipeline sets a fixed seed (42) in `tar_option_set()` and in the Bayesian model fit so MCMC draws are reproducible for the same R and package versions.
+- Install dependencies with `Rscript analysis/scripts/setup/install_packages.R` and run the pipeline from project root (or as in Quick start). Session info is printed at the end of the rendered report.
+- Setup unit tests expect a clean Git tree and branch `main`; for local development you can run individual targets or temporarily adjust these checks.
 
 ## Documentation
 

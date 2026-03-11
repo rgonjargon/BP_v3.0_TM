@@ -1,5 +1,5 @@
 ---
-title: "BP Targets Report"
+title: "Ozone analysis report"
 subtitle: "This report was developed using Cursor IDE with AI-assisted code and analysis editing"
 author: "Dr Tom Moore - Statistical Scientist"
 date: last-modified
@@ -68,6 +68,7 @@ tar_option_set(format = "rds",
                # controller = crew::crew_controller_local(name = "HAL 9000", workers = 5, seconds_idle = 3),
                memory = "transient",
                garbage_collection = TRUE,
+               seed = 42L,
                packages = c(
                  "tidyverse", "janitor", "modelr", "tidybayes", "brms",
                  "bayesplot", "ggdag", "cmdstanr", "targets", "patchwork", "testthat"))
@@ -78,6 +79,8 @@ tar_option_set(format = "rds",
 #| include: false
 #| echo: false
 # Raw data
+# When switching to real data: add tar_target(raw_data_file, "analysis/data/foo.csv", format = "file")
+# and make raw_data read from that path so the pipeline invalidates when the data file changes.
 tar_target(raw_data, 
            airquality
 )
@@ -141,12 +144,12 @@ tar_target(fit, {
         data = data,
         threads = brms::threading(threads = NULL, grainsize = 1250, static = FALSE),
         backend = "cmdstanr", silent = 0, refresh = 100,
-        chains = 4, cores = 4, warmup = 1000, iter = 2000)
+        chains = 4, cores = 4, warmup = 1000, iter = 2000, seed = 42)
   }, error = function(e) {
     brms::brm(mod_formula, family = list(gaussian(), gaussian()),
         data = data,
         backend = "rstan", silent = 0, refresh = 100,
-        chains = 4, cores = 4, warmup = 1000, iter = 2000)
+        chains = 4, cores = 4, warmup = 1000, iter = 2000, seed = 42)
   })
 })
 ```
@@ -169,16 +172,46 @@ tar_target(fit_saved, {
 ```{targets dag}
 #| include: false
 #| echo: false
-# DAG for structural equations: temp → wind; temp, wind → log_ozone
+# DAG: left-to-right layout (exposure → mediator → outcome); nodes 50% larger
 tar_target(dag, {
-  ggdag_status(
-    dagify(
-      wind ~ temp,
-      log_ozone ~ wind + temp,
-      exposure = "temp",
-      outcome = "log_ozone"
-    ), layout = "nicely"
-  ) + theme_dag()
+  basic_dag <- dagify(
+    wind ~ temp,
+    log_ozone ~ wind,
+    log_ozone ~ temp,
+    exposure = "temp",
+    outcome = "log_ozone",
+    coords = list(
+      x = c(temp = 0, wind = 1, log_ozone = 2),
+      y = c(temp = 1, wind = 1.1, log_ozone = 1)
+    )
+  )
+  basic_dag_plot <- basic_dag |>
+    ggdag::tidy_dagitty() |>
+    dplyr::mutate(
+      var_type = dplyr::case_when(
+        name == "temp" ~ "Exposure",
+        name == "log_ozone" ~ "Outcome",
+        name == "wind" ~ "Mediator"
+      ),
+      label = dplyr::case_match(
+        name,
+        "temp" ~ "temp",
+        "wind" ~ "wind",
+        "log_ozone" ~ "log(O3)"
+      )
+    )
+  ggplot2::ggplot(basic_dag_plot, ggplot2::aes(x = x, y = y, xend = xend, yend = yend)) +
+    ggdag::geom_dag_edges() +
+    ggdag::geom_dag_point(ggplot2::aes(color = var_type), size = 21) +
+    ggdag::geom_dag_text(
+      ggplot2::aes(label = label),
+      color = "white", fontface = "bold", size = 4
+    ) +
+    ggplot2::scale_color_manual(
+      values = c(Exposure = "#882255", Mediator = "#6699CC", Outcome = "#999933"),
+      guide = "none"
+    ) +
+    ggdag::theme_dag()
 })
 ```
 
@@ -305,6 +338,36 @@ tar_target(qmd_file, {
 }, format = "file")
 ```
 
+```{targets readme_file}
+#| include: false
+#| echo: false
+# Track README.md so setup_unit_tests invalidates when README is edited
+tar_target(readme_file, {
+  project_root <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
+  file.path(project_root, "README.md")
+}, format = "file")
+```
+
+```{targets project_rules_file}
+#| include: false
+#| echo: false
+# Track project rules so setup_unit_tests invalidates when rules are edited
+tar_target(project_rules_file, {
+  project_root <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
+  file.path(project_root, ".cursor", "rules", "project-rules.mdc")
+}, format = "file")
+```
+
+```{targets install_packages_file}
+#| include: false
+#| echo: false
+# Track install_packages.R so setup_unit_tests invalidates when package list changes
+tar_target(install_packages_file, {
+  project_root <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
+  file.path(project_root, "analysis", "scripts", "setup", "install_packages.R")
+}, format = "file")
+```
+
 ```{targets setup_unit_tests}
 #| include: false
 #| echo: false
@@ -320,6 +383,9 @@ tar_target(setup_unit_tests, {
   }
   pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
   qmd_path <- qmd_file
+  readme_path <- readme_file
+  project_rules_path <- project_rules_file
+  install_packages_path <- install_packages_file
   p <- function(...) file.path(pr, ...)
   read_txt <- function(path) paste(readLines(path, warn = FALSE), collapse = " ")
 
@@ -349,12 +415,12 @@ tar_target(setup_unit_tests, {
     run_one("Git: remote origin", testthat::expect_true("origin" %in% git("remote", "show")))
   )
   config_tests <- list(
-    run_one("README: mentions pipeline/run", testthat::expect_true(grepl("pipeline|quarto|run|quick start", read_txt(p("README.md")), ignore.case = TRUE))),
+    run_one("README: mentions pipeline/run", testthat::expect_true(grepl("pipeline|quarto|run|quick start", read_txt(readme_path), ignore.case = TRUE))),
     run_one(".gitignore: excludes analysis/data", testthat::expect_true(grepl("analysis/data", gi, fixed = TRUE))),
     run_one(".gitignore: excludes _targets", testthat::expect_true(grepl("_targets", gi))),
     run_one("Project rules: project-rules.mdc", {
-      testthat::expect_true(file.exists(p(".cursor", "rules", "project-rules.mdc")))
-      testthat::expect_true(grepl("Quarto|analysis|Cursor", read_txt(p(".cursor", "rules", "project-rules.mdc"))))
+      testthat::expect_true(file.exists(project_rules_path))
+      testthat::expect_true(grepl("Quarto|analysis|Cursor", read_txt(project_rules_path)))
     }),
     run_one("Output writable: analysis/output/plots", {
       tf <- p("analysis", "output", "plots", ".proj_test"); dir.create(dirname(tf), recursive = TRUE, showWarnings = FALSE)
@@ -407,7 +473,7 @@ tar_target(setup_unit_tests, {
 # Report unit tests: setup + analysis summary, Git release readiness, and report/output checks
 tar_target(report_unit_tests, {
   pt_setup <- setup_unit_tests
-  pt_analysis <- analysis_unit_tests
+  pt_analysis <- unit_tests
   pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
   git_ok <- pt_setup %>% dplyr::filter(grepl("^Git:", .data$test)) %>% dplyr::pull(.data$passed) %>% all()
   report_path <- file.path(pr, "analysis", "scripts", "1_targets_report.html")
@@ -646,7 +712,7 @@ tryCatch({
       sd = sd(value, na.rm = TRUE),
       .groups = "drop"
     )
-  analysis_unit_tests_tbl <- tar_read(analysis_unit_tests)
+  analysis_unit_tests_tbl <- tar_read(unit_tests)
   setup_unit_tests_tbl <- tar_read(setup_unit_tests)
   tables_path <- file.path(tables_dir, "1_targets_report_tables.xlsx")
   writexl::write_xlsx(list(Summary = summary_tbl, Analysis_unit_tests = analysis_unit_tests_tbl, Setup_unit_tests = setup_unit_tests_tbl), tables_path)
@@ -664,20 +730,21 @@ tryCatch({
 - A biologist's guide to model selection and causal inference: <https://doi.org/10.1098/rspb.2020.2815></details>
 ```{r}
 #| echo: false
-#| out-width: 75%
-#| fig-height: 3
+#| out-width: 50%
+#| fig-height: 4.5
 #| fig-width: 9
+#| fig-align: center
 setwd(root_dir)
 tryCatch({
   d <- tar_read(dag)
-  ggplot2::ggsave(file.path(plot_dir, "causal_dag.png"), d, width = 9, height = 3, dpi = 600)
+  ggplot2::ggsave(file.path(plot_dir, "causal_dag.png"), d, width = 6, height = 3, dpi = 600)
   d
 }, error = function(e) {
   cat("DAG not available.\n")
 })
 ```
 
-Figure 1: Causal diagram (DAG) for the structural equations: temperature causally affects wind; temperature and wind affect log(ozone). Arrows indicate the direction of the hypothesized effects.
+Figure 1: Causal diagram (DAG): exposure (temp) → mediator (wind) → outcome (log_ozone), left to right. Arrows show the direction of effects.
 
 ### Raw plots
 ```{r}
