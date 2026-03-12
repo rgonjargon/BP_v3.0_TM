@@ -20,47 +20,68 @@ R + Quarto project: targets pipeline and analysis reports.
 │       │   ├── _targets/       # Pipeline cache (git-ignored)
 │       │   └── _targets_r/     # Generated target scripts (git-ignored)
 │       └── setup/
-│           └── install_packages.R
+│           ├── install_packages.R
+│           └── bootstrap.R     # One-command setup for new machines
 ├── docs/               # Project documentation
 ├── .cursor/            # Cursor rules
 ├── .cursorignore
 ├── .gitignore
+├── renv.lock           # Locked package versions (renv)
 └── project.Rproj
 ```
 
-## Quick start
+## Quick start (fresh clone)
 
-1. **Install R dependencies**  
-   `Rscript analysis/scripts/setup/install_packages.R`
+```bash
+git clone <repo-url> && cd BP_v3.0_TM
+Rscript analysis/scripts/setup/bootstrap.R
+quarto render analysis/scripts/1_targets.qmd
+open analysis/scripts/1_targets_report.html
+```
 
-2. **Run the pipeline**  
-   `cd analysis/scripts/pipeline && Rscript -e "targets::tar_make(reporter = 'verbose')"`
+The bootstrap script creates directories, restores locked package versions via `renv`, installs CmdStan if needed, and clears any stale targets cache.
 
-3. **Render the report**  
+## Quick start (existing machine)
+
+1. **Restore R dependencies** (exact versions from `renv.lock`)
+   `Rscript -e "renv::restore()"`
+
+2. **Render the report** (runs the pipeline internally via `tar_make()`)
    `quarto render analysis/scripts/1_targets.qmd`
 
-4. **Open the report**  
+3. **Open the report**
    `analysis/scripts/1_targets_report.html`
 
 ## Setup on a new machine (after clone)
 
-After cloning or moving the repo to another machine, follow this checklist so the targets pipeline runs correctly:
+| Step | Action |
+| ---- | ------ |
+| 1 | Clone repo and `cd` to project root. |
+| 2 | Run the bootstrap script: `Rscript analysis/scripts/setup/bootstrap.R`. This creates directories, installs locked packages, installs CmdStan, and clears stale targets cache. |
+| 3 | Render the report: `quarto render analysis/scripts/1_targets.qmd`. The report runs `tar_make()` internally. |
+
+Or, step by step without the bootstrap script:
 
 | Step | Action |
-|------|--------|
+| ---- | ------ |
 | 1 | Clone repo and `cd` to project root. |
-| 2 | Ensure `.gitignore` includes `analysis/data` and `_targets` (so setup unit tests pass). |
-| 3 | Create missing dirs: `analysis/data`, `analysis/data/import`, `analysis/output`, and subdirs (models, plots, tables). From project root: `mkdir -p analysis/data analysis/data/import analysis/output/models analysis/output/plots analysis/output/tables` |
-| 4 | Install R deps: `Rscript analysis/scripts/setup/install_packages.R` |
-| 5 | Wipe or invalidate the targets cache (stale meta from the old machine can cause errors). In R with working dir `analysis/scripts/pipeline`: `targets::tar_destroy()` then run the pipeline, or `targets::tar_invalidate()` then `targets::tar_make()`. |
-| 6 | Run pipeline from pipeline dir: `cd analysis/scripts/pipeline && Rscript -e "targets::tar_make(reporter = 'verbose')"` |
+| 2 | Restore packages: `Rscript -e "renv::restore()"` |
+| 3 | Install CmdStan: `Rscript -e "cmdstanr::install_cmdstan()"` |
+| 4 | Render: `quarto render analysis/scripts/1_targets.qmd` |
+
+## Prerequisites
+
+- **R >= 4.0** (tested with 4.5.x)
+- **Quarto** (`quarto --version` must succeed)
+- **C++ toolchain** (for Stan compilation; Xcode CLI tools on macOS, Rtools on Windows)
+- **renv** R package (`install.packages("renv")` if not already available)
 
 ## Reproducibility
 
-For reproducible results:
-
-- Use **R ≥ 4.0**. The pipeline sets a fixed seed (42) in `tar_option_set()` and in the Bayesian model fit so MCMC draws are reproducible for the same R and package versions.
-- Install dependencies with `Rscript analysis/scripts/setup/install_packages.R` and run the pipeline from project root (or as in Quick start). Session info is printed at the end of the rendered report.
+- Package versions are locked in `renv.lock`. Run `renv::restore()` to install exact versions.
+- The pipeline sets a fixed seed (42) in `tar_option_set()` and in the Bayesian model fit so MCMC draws are reproducible for the same R and package versions.
+- `install_packages.R` remains as a fallback that installs latest CRAN versions (without version pinning).
+- Session info is printed at the end of the rendered report.
 - Setup unit tests expect a clean Git tree and branch `main`; for local development you can run individual targets or temporarily adjust these checks.
 
 ## Documentation

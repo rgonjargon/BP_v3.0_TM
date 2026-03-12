@@ -10,6 +10,11 @@ analysis/output/
 _targets/
 _targets_r/
 
+# renv
+renv/library/
+renv/staging/
+renv/sandbox/
+
 # OS
 .DS_Store
 Thumbs.db
