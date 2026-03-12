@@ -4,8 +4,8 @@
 
 pkgs <- c(
   "tidyverse", "janitor", "modelr", "tidybayes", "brms",
-  "bayesplot", "ggdag", "cmdstanr", "targets", "patchwork", "testthat",
-  "writexl", "visNetwork"
+  "bayesplot", "ggdag", "cmdstanr", "targets", "crew", "patchwork", "testthat",
+  "writexl", "visNetwork", "privacyR", "readr"
 )
 for (p in pkgs) {
   if (!requireNamespace(p, quietly = TRUE)) {

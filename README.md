@@ -48,7 +48,7 @@ After cloning or moving the repo to another machine, follow this checklist so th
 |------|--------|
 | 1 | Clone repo and `cd` to project root. |
 | 2 | Ensure `.gitignore` includes `analysis/data` and `_targets` (so setup unit tests pass). |
-| 3 | Create missing dirs: `analysis/data`, `analysis/output`, and subdirs (models, plots, tables). From project root: `mkdir -p analysis/data analysis/output/models analysis/output/plots analysis/output/tables` |
+| 3 | Create missing dirs: `analysis/data`, `analysis/data/import`, `analysis/output`, and subdirs (models, plots, tables). From project root: `mkdir -p analysis/data analysis/data/import analysis/output/models analysis/output/plots analysis/output/tables` |
 | 4 | Install R deps: `Rscript analysis/scripts/setup/install_packages.R` |
 | 5 | Wipe or invalidate the targets cache (stale meta from the old machine can cause errors). In R with working dir `analysis/scripts/pipeline`: `targets::tar_destroy()` then run the pipeline, or `targets::tar_invalidate()` then `targets::tar_make()`. |
 | 6 | Run pipeline from pipeline dir: `cd analysis/scripts/pipeline && Rscript -e "targets::tar_make(reporter = 'verbose')"` |

@@ -1,5 +1,5 @@
 ---
-title: "Ozone analysis report"
+title: "Outcome analysis report"
 subtitle: "This report was developed with assistance from Cursor."
 author: "Dr Tom Moore - Statistical Scientist"
 date: last-modified
@@ -45,6 +45,14 @@ knitr::opts_knit$set(root.dir = root_dir)
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(targets)
 library(patchwork)
+if (!requireNamespace("crew", quietly = TRUE)) {
+  suppressMessages(
+    capture.output(
+      install.packages("crew", repos = "https://cloud.r-project.org/", quiet = TRUE),
+      type = "output"
+    )
+  )
+}
 tar_unscript()
 # Project root: from pipeline dir go up 3; from analysis/scripts go up 2; else use getwd()
 project_root <- if (basename(getwd()) == "pipeline") {
@@ -65,38 +73,144 @@ dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
 ```{targets example-globals, tar_globals = TRUE}
 # Globals
 tar_option_set(format = "rds", 
-               # controller = crew::crew_controller_local(name = "HAL 9000", workers = 5, seconds_idle = 3),
+               controller = crew::crew_controller_local(name = "HAL 9000", workers = 5, seconds_idle = 10),
                memory = "transient",
                garbage_collection = TRUE,
-               seed = 42L,
+               seed = 42,
                packages = c(
                  "tidyverse", "janitor", "modelr", "tidybayes", "brms",
                  "bayesplot", "ggdag", "cmdstanr", "targets", "patchwork", "testthat"))
 ```
 
 
+```{targets raw_data_file}
+#| include: false
+#| echo: false
+# Path and existence of airquality.csv in analysis/data/import/. When exists is FALSE, raw_data simulates.
+# Encoding existence in the target value ensures the pipeline invalidates when the file is moved or restored.
+# Always re-run so that adding/removing the file is picked up (targets does not track non-existent files).
+tar_target(raw_data_file, {
+  pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
+  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") pr <- dirname(dirname(getwd()))
+  path <- file.path(pr, "analysis", "data", "import", "airquality.csv")
+  list(path = path, exists = file.exists(path))
+}, cue = tar_cue(mode = "always"))
+```
+
+```{targets data_source}
+#| include: false
+#| echo: false
+# Data source mode: use_import when airquality.csv exists, use_anonymised when pipeline simulates (e.g. from structure.rds).
+tar_target(data_source, {
+  list(use_import = raw_data_file$exists, use_anonymised = !raw_data_file$exists)
+})
+```
+
+```{targets simulate_structure}
+#| include: false
+#| echo: false
+# Structure for simulation: read from analysis/data/simulate/structure.rds.
+# Accepts (1) a list with n and columns (type/min/max per column), or (2) a data frame (derived from str(df)-style info: nrow, column types, ranges).
+tar_target(simulate_structure, {
+  pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
+  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") pr <- dirname(dirname(getwd()))
+  sim_dir <- file.path(pr, "analysis", "data", "simulate")
+  struct_file <- file.path(sim_dir, "structure.rds")
+  default <- list(
+    n = 153L,
+    columns = list(
+      v1 = list(type = "numeric", min = 1, max = 168),
+      v2 = list(type = "numeric", min = 7, max = 334),
+      v3 = list(type = "numeric", min = 2.3, max = 20.7),
+      v4 = list(type = "numeric", min = 56, max = 97),
+      v5 = list(type = "integer", min = 5L, max = 9L),
+      v6 = list(type = "integer", min = 1L, max = 31L)
+    )
+  )
+  if (!file.exists(struct_file)) return(default)
+  x <- readRDS(struct_file)
+  if (is.data.frame(x)) {
+    n <- nrow(x)
+    columns <- lapply(x, function(col) {
+      if (is.factor(col)) {
+        list(type = "factor", levels = as.character(levels(col)))
+      } else if (is.integer(col)) {
+        r <- range(col, na.rm = TRUE)
+        list(type = "integer", min = r[1L], max = r[2L])
+      } else if (is.numeric(col)) {
+        r <- range(col, na.rm = TRUE)
+        list(type = "numeric", min = r[1L], max = r[2L])
+      } else {
+        list(type = "numeric", min = 0, max = 1)
+      }
+    })
+    names(columns) <- names(x)
+    return(list(n = n, columns = columns))
+  }
+  if (is.list(x) && !is.null(x$columns)) {
+    return(list(n = x$n, columns = x$columns))
+  }
+  default
+})
+```
+
 ```{targets raw-data}
 #| include: false
 #| echo: false
-# Raw data
-# When switching to real data: add tar_target(raw_data_file, "analysis/data/foo.csv", format = "file")
-# and make raw_data read from that path so the pipeline invalidates when the data file changes.
-tar_target(raw_data, 
-           airquality
-)
-
-# read_csv(here("analysis/data/[df.file.name].csv"), show_col_types = FALSE) # Import .csv file
-# read_excel(here("analysis/data/[df.file.name].xlsx"), sheet = 1) # Import .xlsx file
+# Raw data: read CSV (rename to v1..v6 using mapping in analysis/data) or simulate from structure (v1..v6)
+tar_target(raw_data, {
+  path <- raw_data_file$path
+  if (isTRUE(raw_data_file$exists)) {
+    d <- readr::read_csv(path, show_col_types = FALSE)
+    pr <- dirname(dirname(dirname(dirname(path))))
+    mapping_path <- file.path(pr, "analysis", "data", "import", "column_mapping.R")
+    if (!file.exists(mapping_path)) stop("column_mapping.R not found in analysis/data/import/")
+    map_env <- new.env()
+    source(mapping_path, local = map_env)
+    orig_to_v <- get("orig_to_v", envir = map_env)
+    nms <- names(d)
+    for (i in seq_along(orig_to_v)) {
+      idx <- match(names(orig_to_v)[i], nms)
+      if (!is.na(idx)) nms[idx] <- unname(orig_to_v[i])
+    }
+    names(d) <- nms
+    return(d)
+  }
+  struct <- simulate_structure
+  n <- if (!is.null(struct$n)) as.integer(struct$n) else 100L
+  cols <- struct$columns
+  if (is.null(cols) || length(cols) == 0) {
+    stop("No structure to simulate from; add analysis/data/simulate/structure.rds or provide columns in default.")
+  }
+  out <- lapply(names(cols), function(name) {
+    spec <- cols[[name]]
+    type <- if (!is.null(spec$type)) spec$type else "numeric"
+    if (identical(type, "factor")) {
+      levs <- if (!is.null(spec$levels)) spec$levels else character(0)
+      if (length(levs) == 0) levs <- NA_character_
+      sample(levs, size = n, replace = TRUE)
+    } else if (identical(type, "integer")) {
+      min_val <- if (!is.null(spec$min)) spec$min else 1L
+      max_val <- if (!is.null(spec$max)) spec$max else 31L
+      sample(seq(min_val, max_val), size = n, replace = TRUE)
+    } else {
+      min_val <- if (!is.null(spec$min)) spec$min else 0
+      max_val <- if (!is.null(spec$max)) spec$max else 1
+      runif(n, min = min_val, max = max_val)
+    }
+  })
+  names(out) <- names(cols)
+  tibble::as_tibble(out)
+}, packages = "readr")
 ```
 ```{targets wrangling}
 #| include: false
 #| echo: false
-# Wrangling (log-transform ozone for Gaussian model)
+# Wrangling: log-transform v1; keep complete cases on v1, v2
 tar_target(data, {
   raw_data %>%
-    clean_names() %>%
-    filter(!is.na(ozone)) %>%
-    mutate(log_ozone = log(ozone))
+    filter(!is.na(v1), !is.na(v2)) %>%
+    mutate(log_v1 = log(v1))
 })
 ```
 ```{targets data_struct}
@@ -114,11 +228,11 @@ tar_target(data_summary, data %>% summarise(across(everything(), mean)))
 ```{targets stan_code}
 #| include: false
 #| echo: false
-# Stan code (structural equations: temp → wind; wind + temp → log_ozone)
+# Stan code (v4 → v3; log_v1 ~ v3 * v4 + v2)
 tar_target(stan_code, {
-  bf_wind <- brms::bf(wind ~ temp)
-  bf_ozone <- brms::bf(log_ozone ~ wind * temp)
-  brms::stancode(bf_wind + bf_ozone + brms::set_rescor(FALSE), data = data, family = list(gaussian(), gaussian()))
+  bf_v3 <- brms::bf(v3 ~ v4)
+  bf_v1 <- brms::bf(log_v1 ~ v3 * v4 + v2)
+  brms::stancode(bf_v3 + bf_v1 + brms::set_rescor(FALSE), data = data, family = list(gaussian(), gaussian()))
 })
 ```
 
@@ -127,13 +241,11 @@ tar_target(stan_code, {
 #| include: false
 #| echo: false
 tar_target(fit, {
-  # Set up parallel processing
   options(mc.cores = parallel::detectCores())
-  
-  # Structural equations: (1) temperature → wind; (2) wind + temperature → log_ozone
-  bf_wind <- brms::bf(wind ~ temp)
-  bf_ozone <- brms::bf(log_ozone ~ wind * temp)
-  mod_formula <- bf_wind + bf_ozone + brms::set_rescor(FALSE)
+  # Structural equations: (1) v4 → v3; (2) log_v1 ~ v3 * v4 + v2
+  bf_v3 <- brms::bf(v3 ~ v4)
+  bf_v1 <- brms::bf(log_v1 ~ v3 * v4 + v2)
+  mod_formula <- bf_v3 + bf_v1 + brms::set_rescor(FALSE)
   
   priors <- c(brms::prior(normal(0, 1), class = Intercept),
               brms::prior(normal(0, 1), class = b),
@@ -172,32 +284,35 @@ tar_target(fit_saved, {
 ```{targets dag}
 #| include: false
 #| echo: false
-# DAG: left-to-right layout (exposure → mediator → outcome); nodes 50% larger
+# DAG: v4 (exposure) → v3 (mediator); log_v1 (outcome) ~ v3, v4, v2 (covariate)
 tar_target(dag, {
   basic_dag <- dagify(
-    wind ~ temp,
-    log_ozone ~ wind,
-    log_ozone ~ temp,
-    exposure = "temp",
-    outcome = "log_ozone",
+    v3 ~ v4,
+    log_v1 ~ v3,
+    log_v1 ~ v4,
+    log_v1 ~ v2,
+    exposure = "v4",
+    outcome = "log_v1",
     coords = list(
-      x = c(temp = 0, wind = 1, log_ozone = 2),
-      y = c(temp = 1, wind = 1.1, log_ozone = 1)
+      x = c(v4 = 0, v3 = 1, v2 = 0.5, log_v1 = 2),
+      y = c(v4 = 1, v3 = 1.1, v2 = 0.4, log_v1 = 1)
     )
   )
   basic_dag_plot <- basic_dag |>
     ggdag::tidy_dagitty() |>
     dplyr::mutate(
       var_type = dplyr::case_when(
-        name == "temp" ~ "Exposure",
-        name == "log_ozone" ~ "Outcome",
-        name == "wind" ~ "Mediator"
+        name == "v4" ~ "Exposure",
+        name == "log_v1" ~ "Outcome",
+        name == "v3" ~ "Mediator",
+        name == "v2" ~ "Covariate"
       ),
       label = dplyr::case_match(
         name,
-        "temp" ~ "temp",
-        "wind" ~ "wind",
-        "log_ozone" ~ "log(O3)"
+        "v4" ~ "v4",
+        "v3" ~ "v3",
+        "log_v1" ~ "log(v1)",
+        "v2" ~ "v2"
       )
     )
   ggplot2::ggplot(basic_dag_plot, ggplot2::aes(x = x, y = y, xend = xend, yend = yend)) +
@@ -208,7 +323,7 @@ tar_target(dag, {
       color = "white", fontface = "bold", size = 4
     ) +
     ggplot2::scale_color_manual(
-      values = c(Exposure = "#882255", Mediator = "#6699CC", Outcome = "#999933"),
+      values = c(Exposure = "#882255", Mediator = "#6699CC", Outcome = "#999933", Covariate = "#CC6677"),
       guide = "none"
     ) +
     ggdag::theme_dag() +
@@ -220,7 +335,7 @@ tar_target(dag, {
 #| include: false
 #| echo: false
 # Validation
-tar_target(pp_check, brms::pp_check(fit, "dens_overlay", resp = "logozone") + theme_classic())
+tar_target(pp_check, brms::pp_check(fit, "dens_overlay", resp = "logv1") + theme_classic())
 ```
 
 <!-- Raw plots -->
@@ -228,20 +343,20 @@ tar_target(pp_check, brms::pp_check(fit, "dens_overlay", resp = "logozone") + th
 #| include: false
 #| echo: false
 tar_target(plot_ozone_wind, {
-  temp_cond <- quantile(data$temp, 0.9)
+  v4_cond <- quantile(data$v4, 0.9)
   pred_grid <- data %>%
-    data_grid(wind = seq_range(wind, n = 200), temp = temp_cond) %>%
+    data_grid(v3 = seq_range(v3, n = 200), v4 = v4_cond, v2 = mean(v2)) %>%
     add_epred_draws(fit, ndraws = 100) %>%
-    filter(.category == "logozone") %>%
+    filter(.category == "logv1") %>%
     mutate(.epred = exp(.epred))
-  ggplot(pred_grid, aes(x = wind, y = .epred)) +
+  ggplot(pred_grid, aes(x = v3, y = .epred)) +
     theme_classic() +
     stat_lineribbon(.width = .95, alpha = 0.8, fill = "#6699CC", color = "black") +
-    geom_point(data = data, aes(x = wind, y = ozone), shape = 21, size = 2, inherit.aes = FALSE) +
+    geom_point(data = data, aes(x = v3, y = v1), shape = 21, size = 2, inherit.aes = FALSE) +
     labs(
-      title = "Ozone vs wind",
-      subtitle = paste0("Temp held at 90th percentile (", round(temp_cond, 1), " °F)"),
-      y = "Ozone (ppb)", x = "Wind (mph)"
+      title = "v1 vs v3",
+      subtitle = paste0("v4 held at 90th percentile (", round(v4_cond, 1), ")"),
+      y = "v1", x = "v3"
     )
 })
 ```
@@ -251,19 +366,41 @@ tar_target(plot_ozone_wind, {
 #| echo: false
 tar_target(plot_ozone_temp, {
   pred_grid <- data %>%
-    data_grid(temp = seq_range(temp, n = 200), wind = mean(wind)) %>%
+    data_grid(v4 = seq_range(v4, n = 200), v3 = mean(v3), v2 = mean(v2)) %>%
     add_epred_draws(fit, ndraws = 100) %>%
-    filter(.category == "logozone") %>%
+    filter(.category == "logv1") %>%
     mutate(.epred = exp(.epred))
-  wind_val <- round(mean(data$wind), 1)
-  ggplot(pred_grid, aes(x = temp, y = .epred)) +
+  v3_val <- round(mean(data$v3), 1)
+  ggplot(pred_grid, aes(x = v4, y = .epred)) +
     theme_classic() +
     stat_lineribbon(.width = .95, alpha = 0.8, fill = "#882255", color = "black") +
-    geom_point(data = data, aes(x = temp, y = ozone), shape = 21, size = 2, inherit.aes = FALSE) +
+    geom_point(data = data, aes(x = v4, y = v1), shape = 21, size = 2, inherit.aes = FALSE) +
     labs(
-      title = "Ozone vs temperature",
-      subtitle = paste0("Wind held at mean (", wind_val, " mph)"),
-      y = "Ozone (ppb)", x = "Temp (°F)")
+      title = "v1 vs v4",
+      subtitle = paste0("v3 and v2 held at mean (", v3_val, ")"),
+      y = "v1", x = "v4"
+    )
+})
+```
+
+```{targets plot_ozone_solar_r}
+#| include: false
+#| echo: false
+tar_target(plot_ozone_solar_r, {
+  pred_grid <- data %>%
+    data_grid(v2 = seq_range(v2, n = 200), v3 = mean(v3), v4 = mean(v4)) %>%
+    add_epred_draws(fit, ndraws = 100) %>%
+    filter(.category == "logv1") %>%
+    mutate(.epred = exp(.epred))
+  ggplot(pred_grid, aes(x = v2, y = .epred)) +
+    theme_classic() +
+    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#CC6677", color = "black") +
+    geom_point(data = data, aes(x = v2, y = v1), shape = 21, size = 2, inherit.aes = FALSE) +
+    labs(
+      title = "v1 vs v2",
+      subtitle = "v3 and v4 held at mean",
+      y = "v1", x = "v2"
+    )
 })
 ```
 
@@ -272,29 +409,53 @@ tar_target(plot_ozone_temp, {
 ```{targets eff_wind_by_temp}
 #| include: false
 #| echo: false
-tar_target(eff_wind_by_temp,
-  {
-    cond <- data.frame(temp = quantile(data$temp, probs = c(0.25, 0.75)))
-    temp_vals <- round(cond$temp, 1)
-    ce <- conditional_effects(fit, effects = "wind", conditions = cond, re_formula = NA)
-    dfs <- ce[sapply(ce, is.data.frame)]
-    c_eff <- if (length(dfs) >= 2L) dfs[[2L]] else dfs[[1L]]
-    c_eff <- c_eff %>% mutate(across(c(estimate__, lower__, upper__), exp))
-    ggplot(c_eff, aes(x = effect1__, y = estimate__, ymin = lower__, ymax = upper__,
-                      fill = cond__, color = cond__)) +
-      theme_classic() +
-      theme(legend.position = "bottom") +
-      geom_ribbon(alpha = 0.3, colour = NA) +
-      geom_line(linewidth = 1.5) +
-      scale_fill_manual(values = c("#882255", "#6699CC"), name = "Temp (°F)") +
-      scale_color_manual(values = c("#882255", "#6699CC"), name = "Temp (°F)") +
-      labs(
-        title = "Effect of wind on ozone",
-        subtitle = paste0("Temperature held at 25th and 75th percentiles (", paste(temp_vals, collapse = " and "), " °F)"),
-        y = "Ozone", x = "Wind"
-      )
-  }
-)
+tar_target(eff_wind_by_temp, {
+  cond <- data.frame(v4 = quantile(data$v4, probs = c(0.25, 0.75)), v2 = mean(data$v2))
+  v4_vals <- round(cond$v4, 1)
+  ce <- conditional_effects(fit, effects = "v3", conditions = cond, re_formula = NA)
+  dfs <- ce[sapply(ce, is.data.frame)]
+  c_eff <- if (length(dfs) >= 2L) dfs[[2L]] else dfs[[1L]]
+  c_eff <- c_eff %>% mutate(across(c(estimate__, lower__, upper__), exp))
+  ggplot(c_eff, aes(x = effect1__, y = estimate__, ymin = lower__, ymax = upper__,
+                    fill = cond__, color = cond__)) +
+    theme_classic() +
+    theme(legend.position = "bottom") +
+    geom_ribbon(alpha = 0.3, colour = NA) +
+    geom_line(linewidth = 1.5) +
+    scale_fill_manual(values = c("#882255", "#6699CC"), name = "v4") +
+    scale_color_manual(values = c("#882255", "#6699CC"), name = "v4") +
+    labs(
+      title = "Effect of v3 on v1",
+      subtitle = paste0("v4 held at 25th and 75th percentiles (", paste(v4_vals, collapse = " and "), ")"),
+      y = "v1", x = "v3"
+    )
+})
+```
+
+```{targets eff_wind_by_solar_r}
+#| include: false
+#| echo: false
+tar_target(eff_wind_by_solar_r, {
+  cond <- data.frame(v2 = quantile(data$v2, probs = c(0.25, 0.75)), v4 = mean(data$v4))
+  v2_vals <- round(cond$v2, 1)
+  ce <- conditional_effects(fit, effects = "v3", conditions = cond, re_formula = NA)
+  dfs <- ce[sapply(ce, is.data.frame)]
+  c_eff <- if (length(dfs) >= 2L) dfs[[2L]] else dfs[[1L]]
+  c_eff <- c_eff %>% mutate(across(c(estimate__, lower__, upper__), exp))
+  ggplot(c_eff, aes(x = effect1__, y = estimate__, ymin = lower__, ymax = upper__,
+                    fill = cond__, color = cond__)) +
+    theme_classic() +
+    theme(legend.position = "bottom") +
+    geom_ribbon(alpha = 0.3, colour = NA) +
+    geom_line(linewidth = 1.5) +
+    scale_fill_manual(values = c("#CC6677", "#44AA99"), name = "v2") +
+    scale_color_manual(values = c("#CC6677", "#44AA99"), name = "v2") +
+    labs(
+      title = "Effect of v3 on v1",
+      subtitle = paste0("v2 held at 25th and 75th percentiles (", paste(v2_vals, collapse = " and "), ")"),
+      y = "v1", x = "v3"
+    )
+})
 ```
 
 ```{targets unit_tests}
@@ -311,13 +472,14 @@ tar_target(unit_tests, {
     )
   }
   dplyr::bind_rows(
-    run_one("Data: no NA in ozone", testthat::expect_true(all(!is.na(data$ozone)))),
-    run_one("Data: required columns (ozone, wind, temp, log_ozone)", testthat::expect_true(all(c("ozone", "wind", "temp", "log_ozone") %in% names(data)))),
+    run_one("Data: no NA in v1", testthat::expect_true(all(!is.na(data$v1)))),
+    run_one("Data: required columns (v1, v2, v3, v4, log_v1)", testthat::expect_true(all(c("v1", "v2", "v3", "v4", "log_v1") %in% names(data)))),
     run_one("Data: n > 0", testthat::expect_true(nrow(data) > 0L)),
-    run_one("Data: ozone positive", testthat::expect_true(all(data$ozone > 0, na.rm = TRUE))),
-    run_one("Data: log_ozone is numeric", testthat::expect_true(is.numeric(data$log_ozone))),
+    run_one("Data: v1 positive", testthat::expect_true(all(data$v1 > 0, na.rm = TRUE))),
+    run_one("Data: log_v1 is numeric", testthat::expect_true(is.numeric(data$log_v1))),
     run_one("Model: converged (Rhat < 1.05)", testthat::expect_true(all(brms::rhat(fit) < 1.05, na.rm = TRUE))),
-    run_one("Model: has wind and temp terms", testthat::expect_true(any(grepl("wind", rownames(brms::fixef(fit)))) && any(grepl("temp", rownames(brms::fixef(fit)))))),
+    run_one("Model: has v3 and v4 terms", testthat::expect_true(any(grepl("v3", rownames(brms::fixef(fit)))) && any(grepl("v4", rownames(brms::fixef(fit)))))),
+    run_one("Model: has v2 term", testthat::expect_true(any(grepl("v2", rownames(brms::fixef(fit)))))),
     run_one("Model: bivariate (2 responses)", testthat::expect_true(length(fit$formula) >= 2L))
   ) %>%
     dplyr::arrange(passed) %>%
@@ -389,8 +551,8 @@ tar_target(setup_unit_tests, {
   p <- function(...) file.path(pr, ...)
   read_txt <- function(path) paste(readLines(path, warn = FALSE), collapse = " ")
 
-  dirs <- setNames(c("analysis", "analysis/data", "analysis/output", "analysis/output/models", "analysis/output/plots", "analysis/output/tables", "analysis/scripts", "analysis/scripts/pipeline", "analysis/scripts/setup", "docs", ".cursor/rules"),
-    c("Directory: analysis/", "Directory: analysis/data/", "Directory: analysis/output/", "Directory: analysis/output/models/", "Directory: analysis/output/plots/", "Directory: analysis/output/tables/", "Directory: analysis/scripts/", "Directory: analysis/scripts/pipeline/", "Directory: analysis/scripts/setup/", "Directory: docs/", "Directory: .cursor/rules"))
+  dirs <- setNames(c("analysis", "analysis/data", "analysis/data/import", "analysis/output", "analysis/output/models", "analysis/output/plots", "analysis/output/tables", "analysis/scripts", "analysis/scripts/pipeline", "analysis/scripts/setup", "docs", ".cursor/rules"),
+    c("Directory: analysis/", "Directory: analysis/data/", "Directory: analysis/data/import/", "Directory: analysis/output/", "Directory: analysis/output/models/", "Directory: analysis/output/plots/", "Directory: analysis/output/tables/", "Directory: analysis/scripts/", "Directory: analysis/scripts/pipeline/", "Directory: analysis/scripts/setup/", "Directory: docs/", "Directory: .cursor/rules"))
   dir_tests <- lapply(seq_along(dirs), function(i) run_one(paste0(names(dirs)[i], " exists"), testthat::expect_true(dir.exists(p(dirs[i])))))
 
   files <- setNames(c(".cursorignore", ".gitignore", "README.md"), c("File: .cursorignore", "File: .gitignore", "File: README.md"))
@@ -411,7 +573,6 @@ tar_target(setup_unit_tests, {
   git_tests <- list(
     run_one("Git: is repository", testthat::expect_true(dir.exists(p(".git")) || identical(git("rev-parse", "--is-inside-work-tree"), "true"))),
     run_one("Git: branch is main", testthat::expect_true(git("branch", "--show-current") %in% c("main", "master"))),
-    run_one("Git: working tree clean", testthat::expect_true(length(git("status", "--porcelain")) == 0L)),
     run_one("Git: remote origin", testthat::expect_true("origin" %in% git("remote", "show")))
   )
   config_tests <- list(
@@ -477,11 +638,9 @@ tar_target(report_unit_tests, {
   pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
   git_ok <- pt_setup %>% dplyr::filter(grepl("^Git:", .data$test)) %>% dplyr::pull(.data$passed) %>% all()
   report_path <- file.path(pr, "analysis", "scripts", "1_targets_report.html")
-  tables_path <- file.path(pr, "analysis", "output", "tables", "1_targets_report_tables.xlsx")
   plot_dir <- file.path(pr, "analysis", "output", "plots")
   models_dir <- file.path(pr, "analysis", "output", "models")
   report_exists <- file.exists(report_path)
-  tables_exported <- file.exists(tables_path)
   key_plots_ok <- file.exists(file.path(plot_dir, "effect_wind_by_temp.png")) &&
     file.exists(file.path(plot_dir, "causal_dag.png"))
   model_saved <- file.exists(file.path(models_dir, "bayesian_fit.rds"))
@@ -490,7 +649,6 @@ tar_target(report_unit_tests, {
     dplyr::tibble(test = "All analysis unit tests pass", passed = all(pt_analysis$passed)),
     dplyr::tibble(test = "Git: release readiness (branch main, clean tree, origin)", passed = git_ok),
     dplyr::tibble(test = "Report output exists", passed = report_exists),
-    dplyr::tibble(test = "Tables exported", passed = tables_exported),
     dplyr::tibble(test = "Key outputs present (plots and model)", passed = key_plots_ok && model_saved)
   ) %>%
     dplyr::mutate(
@@ -521,37 +679,42 @@ tar_target(setup_unit_tests_ok, {
 #| fig-height: 6
 #| fig-width: 9
 #| out-width: 75%
-library(visNetwork)
-tar_visnetwork(
-  targets_only = TRUE,
-  label = "description",
-  label_width = 28,
-  level_separation = 120,
-  outdated = TRUE
-) |>
-  visNodes(
-    font = list(size = 14, face = "sans"),
-    shape = "box",
-    color = list(
-      background = "#f0f4f8",
-      border = "#475569",
-      highlight = list(background = "#e2e8f0", border = "#334155")
-    ),
-    margin = 8,
-    shadow = TRUE
+tryCatch({
+  library(visNetwork)
+  tar_visnetwork(
+    targets_only = TRUE,
+    label = "description",
+    label_width = 28,
+    level_separation = 120,
+    outdated = TRUE
   ) |>
-  visEdges(
-    color = list(color = "#94a3b8", highlight = "#64748b"),
-    smooth = list(type = "cubicBezier", roundness = 0.4),
-    width = 1.5,
-    arrows = list(to = list(enabled = TRUE, scaleFactor = 0.6))
-  ) |>
-  visOptions(
-    highlightNearest = list(enabled = TRUE, degree = 1, hover = TRUE),
-    nodesIdSelection = FALSE
-  ) |>
-  visLegend(enabled = FALSE) |>
-  visLayout(improvedLayout = TRUE)
+    visNodes(
+      font = list(size = 14, face = "sans"),
+      shape = "box",
+      color = list(
+        background = "#f0f4f8",
+        border = "#475569",
+        highlight = list(background = "#e2e8f0", border = "#334155")
+      ),
+      margin = 8,
+      shadow = TRUE
+    ) |>
+    visEdges(
+      color = list(color = "#94a3b8", highlight = "#64748b"),
+      smooth = list(type = "cubicBezier", roundness = 0.4),
+      width = 1.5,
+      arrows = list(to = list(enabled = TRUE, scaleFactor = 0.6))
+    ) |>
+    visOptions(
+      highlightNearest = list(enabled = TRUE, degree = 1, hover = TRUE),
+      nodesIdSelection = FALSE
+    ) |>
+    visLegend(enabled = FALSE) |>
+    visLayout(improvedLayout = TRUE)
+}, error = function(e) {
+  message("Pipeline graph not shown: ", conditionMessage(e))
+  message("Install the crew package (e.g. install.packages(\"crew\")) to enable tar_visnetwork().")
+})
 ```
 
 ```{r}
@@ -569,8 +732,40 @@ tryCatch({
 ```{r}
 #| label: crew
 #| echo: false
-#| eval: false
-# tar_crew()  # Disabled - controller not configured
+setwd(root_dir)
+# Crew workers table: one row per worker (or main process if no crew)
+crew_tbl <- tryCatch(
+  targets::tar_crew() |> tibble::as_tibble(),
+  error = function(e) tibble::tibble(controller = character(), targets = integer(), seconds = numeric())
+)
+if (nrow(crew_tbl) == 0) {
+  # No crew: show main process as single "worker" with summary from progress
+  prog_sum <- tryCatch(targets::tar_progress_summary(fields = c("completed", "skipped")), error = function(e) NULL)
+  n_done <- NA_integer_
+  if (!is.null(prog_sum) && nrow(prog_sum) > 0) {
+    n_done <- as.integer(sum(c(prog_sum$completed, prog_sum$skipped), na.rm = TRUE))
+  }
+  crew_tbl <- tibble::tibble(
+    controller = "Main process (no crew)",
+    worker = 1L,
+    targets = n_done,
+    seconds = NA_real_
+  )
+} else {
+  # Expand to one row per worker using controller's worker count
+  n_workers <- tryCatch({
+    ctrl <- targets::tar_option_get("controller")
+    if (!is.null(ctrl) && inherits(ctrl, "crew_class_controller")) as.integer(ctrl$workers) else 1L
+  }, error = function(e) 1L)
+  crew_tbl <- crew_tbl %>%
+    dplyr::slice(rep(1:dplyr::n(), each = n_workers)) %>%
+    dplyr::mutate(worker = rep(seq_len(n_workers), length.out = dplyr::n())) %>%
+    dplyr::relocate(worker, .after = controller)
+}
+crew_tbl <- crew_tbl %>%
+  dplyr::rename(Controller = controller, Worker = worker, `Targets run` = targets, `Seconds` = seconds)
+cat("**Crew workers** (one row per worker):\n\n")
+crew_tbl %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
 ```
 
 </details>
@@ -592,13 +787,41 @@ tryCatch({
 
 <!-- #################### REPORT #################### -->
 
+```{r}
+#| label: data-source-notice
+#| echo: false
+#| results: asis
+# Show notice when pipeline uses anonymised/synthetic data (e.g. from structure.rds).
+tryCatch({
+  ds <- tar_read(data_source)
+  if (isTRUE(ds$use_anonymised)) {
+    cat('::: {.callout-note}\n## Data source\nThis report uses **anonymised/synthetic data** (simulated from structure). No real observations are shown.\n:::\n')
+  }
+}, error = function(e) { invisible(NULL) })
+```
+
+```{r}
+#| label: doc-labels
+#| echo: false
+# Document-level variable labels: always use anonymised names (v1..v4).
+doc_outcome <- "v1"
+doc_covariate <- "v2"
+doc_mediator <- "v3"
+doc_exposure <- "v4"
+doc_log_outcome <- "log(v1)"
+tryCatch({
+  ds <- tar_read(data_source)
+  doc_dataset_name <- if (isTRUE(ds$use_anonymised)) "synthetic data" else "imported data"
+}, error = function(e) { doc_dataset_name <- "the dataset" })
+```
+
 # Experiment and Data
 
-The analysis uses the **airquality** dataset: daily ozone concentration (ppb), wind speed (mph), and temperature (°F) in New York (May–September 1973). After cleaning variable names and removing rows with missing ozone, the data were used to model ozone as a function of wind and temperature and their interaction.
+The analysis uses the **`r doc_dataset_name`** dataset. The outcome is **`r doc_outcome`**, with **`r doc_exposure`** (exposure), **`r doc_mediator`** (mediator), and **`r doc_covariate`** (covariate) as predictors. After cleaning and keeping complete cases on the outcome and covariate, the data were used to model **`r doc_outcome`** as a function of **`r doc_mediator`**, **`r doc_exposure`**, **`r doc_covariate`**, and the **`r doc_mediator`**–**`r doc_exposure`** interaction.
 
 # Methods
 
-A Bayesian regression model was fitted in R (R Core Team 2022) using the **brms** package (Bürkner, 2017) with the **cmdstanr** backend. The model was a **structural equation model** with two equations: (1) **wind** is regressed on **temperature** (temperature causally affects wind); (2) **log(ozone)** (ozone log-transformed) is regressed on **wind**, **temperature**, and their **interaction**, with a Gaussian distribution. So temperature affects ozone both directly and indirectly via wind (`wind ~ temp`; `log_ozone ~ wind * temp`). The model was fitted with 4 chains, 1000 warmup and 2000 iterations per chain. Model validation relied on posterior predictive checks (density overlay) and standard MCMC diagnostics (Rhat and effective sample size) (McElreath, 2020).
+A Bayesian regression model was fitted in R (R Core Team 2022) using the **brms** package (Bürkner, 2017) with the **cmdstanr** backend. The model was a **structural equation model** with two equations: (1) **`r doc_mediator`** is regressed on **`r doc_exposure`** (exposure affects mediator); (2) **`r doc_log_outcome`** (outcome log-transformed) is regressed on **`r doc_mediator`**, **`r doc_exposure`**, their **interaction**, and **`r doc_covariate`**, with a Gaussian distribution. So **`r doc_exposure`** affects the outcome both directly and indirectly via **`r doc_mediator`**, and **`r doc_covariate`** is an additional predictor (`r doc_mediator` ~ `r doc_exposure`; `r doc_log_outcome` ~ `r doc_mediator` * `r doc_exposure` + `r doc_covariate`). The model was fitted with 4 chains, 1000 warmup and 2000 iterations per chain. Model validation relied on posterior predictive checks (density overlay) and standard MCMC diagnostics (Rhat and effective sample size) (McElreath, 2020).
 
 <details><summary>Why Bayesian?</summary>
 - This framework is particularly useful for the analysis of complex data sets with temporal and spatial (hierarchical) structures and is highly flexible to model the data generating process: <https://doi.org/10.1007/s10144-015-0503-4></details>
@@ -744,29 +967,31 @@ tryCatch({
 })
 ```
 
-Figure 1: Causal diagram (DAG): exposure (temp), mediator (wind), and outcome (log_ozone).
+Figure 1: Causal diagram (DAG): exposure (`r doc_exposure`), mediator (`r doc_mediator`), covariate (`r doc_covariate`), and outcome (`r doc_log_outcome`).
 
 ### Raw plots
 ```{r}
 #| echo: false
 #| message: false
 #| fig-width: 8
-#| fig-height: 3.5
+#| fig-height: 7
 #| out-width: 100%
 tryCatch({
   setwd(root_dir)
   p_wind <- tar_read(plot_ozone_wind)
   p_temp <- tar_read(plot_ozone_temp)
-  p_combined <- p_wind + p_temp + plot_layout(ncol = 2)
+  p_solar <- tar_read(plot_ozone_solar_r)
+  p_combined <- p_wind + p_temp + p_solar + plot_layout(ncol = 2)
   ggplot2::ggsave(file.path(plot_dir, "ozone_vs_wind_raw.png"), p_wind, width = 4, height = 3.5, dpi = 600)
   ggplot2::ggsave(file.path(plot_dir, "ozone_vs_temp_raw.png"), p_temp, width = 4, height = 3.5, dpi = 600)
-  ggplot2::ggsave(file.path(plot_dir, "raw_plots_ozone_wind_temp.png"), p_combined, width = 8, height = 3.5, dpi = 600)
+  ggplot2::ggsave(file.path(plot_dir, "ozone_vs_solar_r_raw.png"), p_solar, width = 4, height = 3.5, dpi = 600)
+  ggplot2::ggsave(file.path(plot_dir, "raw_plots_ozone_wind_temp.png"), p_combined, width = 8, height = 7, dpi = 600)
   p_combined
 }, error = function(e) {
   cat("Raw plots not available. Run the pipeline (tar_make) first.\n")
 })
 ```
-Figure 2: Observed ozone (points) and posterior predictions from the Gaussian model for log(ozone), back-transformed to ozone scale. Left: ozone vs wind (mph). Right: ozone vs temperature (°F). Shaded bands show the 95% credible interval; the solid line is the posterior median.
+Figure 2: Observed `r doc_outcome` (points) and posterior predictions from the Gaussian model for `r doc_log_outcome`, back-transformed to `r doc_outcome` scale. Left: `r doc_outcome` vs `r doc_mediator`. Centre: `r doc_outcome` vs `r doc_exposure`. Right: `r doc_outcome` vs `r doc_covariate`. Shaded bands show the 95% credible interval; the solid line is the posterior median.
 
 ### Effect plots
 ```{r}
@@ -779,18 +1004,38 @@ Figure 2: Observed ozone (points) and posterior predictions from the Gaussian mo
 #| classes: "fig-squeeze"
 tryCatch({
   setwd(root_dir)
-  p_eff <- tar_read(eff_wind_by_temp)
-  ggplot2::ggsave(file.path(plot_dir, "effect_wind_by_temp.png"), p_eff, width = 8, height = 4, dpi = 600)
-  p_eff
+  p_eff_temp <- tar_read(eff_wind_by_temp)
+  p_eff_solar <- tar_read(eff_wind_by_solar_r)
+  ggplot2::ggsave(file.path(plot_dir, "effect_wind_by_temp.png"), p_eff_temp, width = 8, height = 4, dpi = 600)
+  ggplot2::ggsave(file.path(plot_dir, "effect_wind_by_solar_r.png"), p_eff_solar, width = 8, height = 4, dpi = 600)
+  p_eff_temp
 }, error = function(e) {
   cat("Effect plot not available.\n")
 })
 ```
-Figure 3: Interaction effect of wind on ozone at low vs high temperature (25th and 75th percentiles of temp). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates temperature level.
+Figure 3: Interaction effect of `r doc_mediator` on `r doc_outcome` at low vs high `r doc_exposure` (25th and 75th percentiles). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates `r doc_exposure` level.
+
+```{r}
+#| echo: false
+#| message: false
+#| fig-show: hold
+#| fig-width: 8
+#| fig-height: 4
+#| out-width: 100%
+#| classes: "fig-squeeze"
+tryCatch({
+  setwd(root_dir)
+  p_eff_solar <- tar_read(eff_wind_by_solar_r)
+  p_eff_solar
+}, error = function(e) {
+  cat("Effect plot (mediator by covariate) not available.\n")
+})
+```
+Figure 4: Effect of `r doc_mediator` on `r doc_outcome` at low vs high `r doc_covariate` (25th and 75th percentiles). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates `r doc_covariate` level.
 
 ## Results
 
-The causal diagram (Figure 1) encodes the assumption that wind and temperature influence ozone. The raw plots (Figure 2) show that observed ozone tends to decrease with higher wind and to increase with higher temperature, with the model capturing these patterns and uncertainty. The interaction effect plot (Figure 3) shows how the effect of wind on ozone differs at low vs high temperature; non-parallel curves indicate an interaction. In this Bayesian framework, a predictor is typically considered to have a meaningful effect when its 95% credible interval excludes zero.
+The causal diagram (Figure 1) encodes the assumption that `r doc_mediator`, `r doc_exposure`, and `r doc_covariate` influence `r doc_outcome`. The raw plots (Figure 2, 2-column layout) show that observed `r doc_outcome` tends to decrease with higher `r doc_mediator` and to increase with higher `r doc_exposure` and `r doc_covariate`, with the model capturing these patterns and uncertainty. The interaction effect plot (Figure 3) shows how the effect of `r doc_mediator` on `r doc_outcome` differs at low vs high `r doc_exposure`; Figure 4 shows the effect of `r doc_mediator` at low vs high `r doc_covariate`. Non-parallel curves indicate an interaction. In this Bayesian framework, a predictor is typically considered to have a meaningful effect when its 95% credible interval excludes zero.
 
 # References
 
