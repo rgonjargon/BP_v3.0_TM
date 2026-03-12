@@ -76,10 +76,10 @@ Or, step by step without the bootstrap script:
 - **C++ toolchain** (for Stan compilation; Xcode CLI tools on macOS, Rtools on Windows)
 - **renv** R package (`install.packages("renv")` if not already available)
 
-**Custom CmdStan path (e.g. cluster):** If CmdStan is already installed in a non-default location, set the environment variable `CMDSTAN_PATH` to the CmdStan directory (e.g. the one containing `bin/stanc`) before running the pipeline or rendering. Example (bash):
+**CmdStan path:** On **Linux**, if the directory `/powerplant/workspace/hrltxm/workbench-k8s/stan/mod_stan/cmdstan-2.36.0` exists (e.g. on the cluster), it is used automatically. On other systems, or to override, set the environment variable `CMDSTAN_PATH` to the CmdStan directory. Example (bash):
 
 ```bash
-export CMDSTAN_PATH="/powerplant/workspace/hrltxm/workbench-k8s/stan/mod_stan/cmdstan-2.36.0"
+export CMDSTAN_PATH="/path/to/cmdstan-2.36.0"
 quarto render analysis/scripts/1_targets.qmd
 ```
 
@@ -88,6 +88,7 @@ Or in R before rendering: `cmdstanr::set_cmdstan_path("/path/to/cmdstan-2.36.0")
 ## Reproducibility
 
 - Package versions are locked in `renv.lock`. Run `renv::restore()` to install exact versions.
+- When running the pipeline from the command line (e.g. `Rscript -e "targets::tar_make()"`), run from the **project root** so `.Rprofile` runs and renv is active; otherwise worker processes may not find packages (janitor, tidybayes, ggdag, etc.). The report activates renv automatically when `renv/activate.R` exists.
 - The pipeline sets a fixed seed (42) in `tar_option_set()` and in the Bayesian model fit so MCMC draws are reproducible for the same R and package versions.
 - `install_packages.R` remains as a fallback that installs latest CRAN versions (without version pinning).
 - Session info is printed at the end of the rendered report.

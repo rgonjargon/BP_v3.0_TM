@@ -69,7 +69,15 @@ models_dir <- file.path(project_root, "analysis", "output", "models")
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
-# Use custom CmdStan path if set (e.g. on cluster: export CMDSTAN_PATH=/path/to/cmdstan-2.36.0)
+# Activate renv so this session and crew workers see the project library (fixes missing janitor/tidybayes/ggdag in tar_make)
+if (requireNamespace("renv", quietly = TRUE) && file.exists(file.path(project_root, "renv/activate.R"))) {
+  renv::activate(project_root)
+}
+# CmdStan: on Linux (cluster) use known path if it exists; else use CMDSTAN_PATH if set; otherwise default
+cluster_cmdstan <- "/powerplant/workspace/hrltxm/workbench-k8s/stan/mod_stan/cmdstan-2.36.0"
+if (Sys.info()["sysname"] == "Linux" && dir.exists(cluster_cmdstan) && !nzchar(Sys.getenv("CMDSTAN_PATH"))) {
+  Sys.setenv(CMDSTAN_PATH = cluster_cmdstan)
+}
 if (nzchar(Sys.getenv("CMDSTAN_PATH")) && requireNamespace("cmdstanr", quietly = TRUE)) {
   cmdstanr::set_cmdstan_path(Sys.getenv("CMDSTAN_PATH"))
 }
@@ -245,8 +253,13 @@ tar_target(stan_code, {
 #| include: false
 #| echo: false
 tar_target(fit, {
-  if (nzchar(Sys.getenv("CMDSTAN_PATH")) && requireNamespace("cmdstanr", quietly = TRUE)) {
-    cmdstanr::set_cmdstan_path(Sys.getenv("CMDSTAN_PATH"))
+  if (requireNamespace("cmdstanr", quietly = TRUE)) {
+    path <- Sys.getenv("CMDSTAN_PATH")
+    if (!nzchar(path) && Sys.info()["sysname"] == "Linux") {
+      cluster_cmdstan <- "/powerplant/workspace/hrltxm/workbench-k8s/stan/mod_stan/cmdstan-2.36.0"
+      if (dir.exists(cluster_cmdstan)) path <- cluster_cmdstan
+    }
+    if (nzchar(path)) cmdstanr::set_cmdstan_path(path)
   }
   options(mc.cores = parallel::detectCores())
   # Structural equations: (1) v4 → v3; (2) log_v1 ~ v3 * v4 + v2

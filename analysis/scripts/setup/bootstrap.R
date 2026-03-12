@@ -29,7 +29,11 @@ if (file.exists("renv.lock") && requireNamespace("renv", quietly = TRUE)) {
   source("analysis/scripts/setup/install_packages.R")
 }
 
-# 3. CmdStan: use CMDSTAN_PATH if set, otherwise install if not present
+# 3. CmdStan: on Linux (cluster) use known path if it exists; else CMDSTAN_PATH if set; otherwise install if not present
+cluster_cmdstan <- "/powerplant/workspace/hrltxm/workbench-k8s/stan/mod_stan/cmdstan-2.36.0"
+if (Sys.info()["sysname"] == "Linux" && dir.exists(cluster_cmdstan) && !nzchar(Sys.getenv("CMDSTAN_PATH"))) {
+  Sys.setenv(CMDSTAN_PATH = cluster_cmdstan)
+}
 if (requireNamespace("cmdstanr", quietly = TRUE)) {
   if (nzchar(Sys.getenv("CMDSTAN_PATH"))) {
     cmdstanr::set_cmdstan_path(Sys.getenv("CMDSTAN_PATH"))
