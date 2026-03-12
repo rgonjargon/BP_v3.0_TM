@@ -69,6 +69,10 @@ models_dir <- file.path(project_root, "analysis", "output", "models")
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
+# Use custom CmdStan path if set (e.g. on cluster: export CMDSTAN_PATH=/path/to/cmdstan-2.36.0)
+if (nzchar(Sys.getenv("CMDSTAN_PATH")) && requireNamespace("cmdstanr", quietly = TRUE)) {
+  cmdstanr::set_cmdstan_path(Sys.getenv("CMDSTAN_PATH"))
+}
 ```
 ```{targets example-globals, tar_globals = TRUE}
 # Globals
@@ -241,6 +245,9 @@ tar_target(stan_code, {
 #| include: false
 #| echo: false
 tar_target(fit, {
+  if (nzchar(Sys.getenv("CMDSTAN_PATH")) && requireNamespace("cmdstanr", quietly = TRUE)) {
+    cmdstanr::set_cmdstan_path(Sys.getenv("CMDSTAN_PATH"))
+  }
   options(mc.cores = parallel::detectCores())
   # Structural equations: (1) v4 → v3; (2) log_v1 ~ v3 * v4 + v2
   bf_v3 <- brms::bf(v3 ~ v4)

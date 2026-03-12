@@ -17,9 +17,11 @@ for (p in pkgs) {
   }
 }
 
-# CmdStan: required by brms when backend = "cmdstanr" (falls back to rstan if missing).
+# CmdStan: use CMDSTAN_PATH if set; otherwise install if not present.
 if (requireNamespace("cmdstanr", quietly = TRUE)) {
-  if (!nzchar(Sys.getenv("CMDSTAN")) &&
+  if (nzchar(Sys.getenv("CMDSTAN_PATH"))) {
+    cmdstanr::set_cmdstan_path(Sys.getenv("CMDSTAN_PATH"))
+  } else if (!nzchar(Sys.getenv("CMDSTAN")) &&
       tryCatch(is.null(cmdstanr::cmdstan_path()), error = function(e) TRUE)) {
     message("Installing CmdStan (one-time setup, may take a few minutes)...")
     cmdstanr::install_cmdstan(quiet = TRUE)

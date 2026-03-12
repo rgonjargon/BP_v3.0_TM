@@ -29,14 +29,19 @@ if (file.exists("renv.lock") && requireNamespace("renv", quietly = TRUE)) {
   source("analysis/scripts/setup/install_packages.R")
 }
 
-# 3. Install CmdStan if not present
+# 3. CmdStan: use CMDSTAN_PATH if set, otherwise install if not present
 if (requireNamespace("cmdstanr", quietly = TRUE)) {
-  has_cmdstan <- tryCatch(!is.null(cmdstanr::cmdstan_path()), error = function(e) FALSE)
-  if (!has_cmdstan) {
-    cat("== Installing CmdStan ==\n")
-    cmdstanr::install_cmdstan(quiet = TRUE)
+  if (nzchar(Sys.getenv("CMDSTAN_PATH"))) {
+    cmdstanr::set_cmdstan_path(Sys.getenv("CMDSTAN_PATH"))
+    cat("== Using CmdStan at CMDSTAN_PATH ==\n")
   } else {
-    cat("== CmdStan already installed ==\n")
+    has_cmdstan <- tryCatch(!is.null(cmdstanr::cmdstan_path()), error = function(e) FALSE)
+    if (!has_cmdstan) {
+      cat("== Installing CmdStan ==\n")
+      cmdstanr::install_cmdstan(quiet = TRUE)
+    } else {
+      cat("== CmdStan already installed ==\n")
+    }
   }
 }
 

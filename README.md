@@ -76,6 +76,15 @@ Or, step by step without the bootstrap script:
 - **C++ toolchain** (for Stan compilation; Xcode CLI tools on macOS, Rtools on Windows)
 - **renv** R package (`install.packages("renv")` if not already available)
 
+**Custom CmdStan path (e.g. cluster):** If CmdStan is already installed in a non-default location, set the environment variable `CMDSTAN_PATH` to the CmdStan directory (e.g. the one containing `bin/stanc`) before running the pipeline or rendering. Example (bash):
+
+```bash
+export CMDSTAN_PATH="/powerplant/workspace/hrltxm/workbench-k8s/stan/mod_stan/cmdstan-2.36.0"
+quarto render analysis/scripts/1_targets.qmd
+```
+
+Or in R before rendering: `cmdstanr::set_cmdstan_path("/path/to/cmdstan-2.36.0")`.
+
 ## Reproducibility
 
 - Package versions are locked in `renv.lock`. Run `renv::restore()` to install exact versions.
