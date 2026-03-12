@@ -1,0 +1,28 @@
+name|type|data|command|depend|seed|path|time|size|bytes|format|repository|iteration|parent|children|seconds|warnings|error
+install_packages_file|stem|48c02da2504cc523|8836ccb8421fd6a9|2c530c1562a7fbd1|614877086|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/analysis/scripts/setup/install_packages.R|t20523.958753282s|s538b|538|file|local|vector|||1.749||
+project_rules_file|stem|08627cb7725148be|8ab43296d916e99a|2c530c1562a7fbd1|-828772361|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/.cursor/rules/project-rules.mdc|t20521.0784385384s|s5507b|5507|file|local|vector|||1.74||
+readme_file|stem|e3150bb93f6a07ed|9cf6c36369a54fd2|2c530c1562a7fbd1|147683478|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/README.md|t20523.9535747999s|s3176b|3176|file|local|vector|||0||
+fit_saved|stem|45af8746d7871746|e89d2d293229ffae|66c64764be8e017a|16215329|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/analysis/output/models/bayesian_fit.rds|t20523.9997712341s|s496709b|496709|file|local|vector|||0.018||
+qmd_file|stem|aa613eacecd4c895|4a8a72f4917906a1|2c530c1562a7fbd1|-1893654431|/Users/tom/Documents/Work/RgonjaRgon/Workspace/BP_v3.0_TM/analysis/scripts/1_targets.qmd|t20524.0062493983s|s42082b|42082|file|local|vector|||1.592||
+simulate_structure|stem|e92fc14454bbab2d|ade8e2b0fdfc559a|2c530c1562a7fbd1|-727172068||t20524.0081108896s|s319b|319|rds|local|vector|||1.761||
+dag|stem|55b6ee2c9956bfee|cc67b05a6ad6ccdd|2c530c1562a7fbd1|1359800161||t20524.0081108653s|s392361b|392361|rds|local|vector|||0.263|There was 1 warning in `dplyr::mutate()`. ℹ In argument: `label = dplyr::case_match(...)`. Caused by warning: ! `case_match()` was deprecated in dplyr 1.2.0. ℹ Please use `recode_values()` instead.|
+raw_data_file|stem|0b7f65c8a1bb2ce2|2a9c227af1e32aee|2c530c1562a7fbd1|-728750967||t20524.0127733935s|s162b|162|rds|local|vector|||1.587||
+raw_data|stem|b1a83fcf24e51f07|c820967e3fd7f392|f93e3abdf5487f57|195724309||t20524.0127749586s|s7093b|7093|rds|local|vector|||0||
+data|stem|f117261a020aae1d|3460b61659a7dba7|4b0a0e901aa33786|-1767041714||t20524.0081109044s|s8266b|8266|rds|local|vector|||0.004||
+project_unit_tests|stem|0cf89896d7dbe775|6802044b947b4875|a764c15ee68b8ba5|-1844606772||t20524.0127750679s|s507b|507|rds|local|vector|||0.019||
+stan_code|stem|af3b6ee0ee79924e|0dd9a7d12aaaddc7|43eacd0a4c6f6efe|927963037||t20524.0081109074s|s891b|891|rds|local|vector|||0.071||
+fit|stem|725a4ecea1e9a313|748bd3ab84520072|43eacd0a4c6f6efe|1172058426||t20524.0081108512s|s496699b|496699|rds|local|vector|||9.207||
+data_summary|stem|81752f49b6633dc9|0469d3d3afafb1c7|43eacd0a4c6f6efe|-1815125725||t20524.0081109119s|s231b|231|rds|local|vector|||0.025|There was 1 warning in `summarise()`. ℹ In argument: `across(everything(), mean)`. Caused by warning in `mean.default()`: ! argument is not numeric or logical: returning NA|
+data_struct|stem|f117261a020aae1d|ee0b6a6bc571b6d1|43eacd0a4c6f6efe|1863290697||t20524.0081109147s|s8266b|8266|rds|local|vector|||0.001||
+plot_ozone_temp|stem|b083bf59de0326eb|d8f28dc185a1f7ce|19f8de571843e049|-1255456292||t20524.0081108703s|s1417230b|1417230|rds|local|vector|||0.436||
+plot_ozone_solar_r|stem|bae7abf17447fb45|3c499084db24872c|19f8de571843e049|752713577||t20524.0081108833s|s1418973b|1418973|rds|local|vector|||0.449||
+eff_wind_by_solar_r|stem|83c5cf127b76d9cc|19ea1b3165e9d56e|19f8de571843e049|-993898549||t20524.0081108217s|s822392b|822392|rds|local|vector|||0.56||
+eff_wind_by_temp|stem|0325259f2641464f|03c02d1ca61b86ea|19f8de571843e049|-223183422||t20524.0081108252s|s822344b|822344|rds|local|vector|||0.964||
+pp_check|stem|d2f7d20fa9b155e2|659e438c576fce90|66c64764be8e017a|347380472||t20524.0081109001s|s312480b|312480|rds|local|vector|||0.459||
+plot_ozone_wind|stem|4e954f1fd4a1b7f6|efd7ef449c899db8|19f8de571843e049|-362958099||t20524.0081108404s|s1422295b|1422295|rds|local|vector|||0.126||
+unit_tests|stem|ac5fabf6b531cf8e|1be5fbd838ae3d08|19f8de571843e049|-592840310||t20524.0081108537s|s396b|396|rds|local|vector|||0.057||
+setup_unit_tests|stem|35222b4797f76407|08efa7de37219e93|5d8d57194768ed1e|-2081983787||t20524.0127757652s|s796b|796|rds|local|vector|||0.077||
+data_source|stem|56a3a564b20438f2|d79610fe1fb1b870|7064e75d8f8303c2|-1239102698||t20524.0127760711s|s107b|107|rds|local|vector|||0||
+project_unit_tests_ok|stem|bfc7e9c51e23c8db|7cd6c46c4020cd9a|07b8ecddde760ebe|-490563658||t20524.0127763365s|s48b|48|rds|local|vector|||0.001||
+report_unit_tests|stem|136a24f2d65a7b0f|f47ba9fc596b2309|0df0099bdbc3ecaf|-433637282||t20524.0127770134s|s337b|337|rds|local|vector|||0.003||
+setup_unit_tests_ok|stem|bfc7e9c51e23c8db|5bc4155a936c76ef|cd784a45bfc607b2|1200427367||t20524.0127771751s|s48b|48|rds|local|vector|||0||

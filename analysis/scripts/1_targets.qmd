@@ -577,8 +577,6 @@ tar_target(setup_unit_tests, {
   )
   config_tests <- list(
     run_one("README: mentions pipeline/run", testthat::expect_true(grepl("pipeline|quarto|run|quick start", read_txt(readme_path), ignore.case = TRUE))),
-    run_one(".gitignore: excludes analysis/data", testthat::expect_true(grepl("analysis/data", gi, fixed = TRUE))),
-    run_one(".gitignore: excludes _targets", testthat::expect_true(grepl("_targets", gi))),
     run_one("Project rules: project-rules.mdc", {
       testthat::expect_true(file.exists(project_rules_path))
       testthat::expect_true(grepl("Quarto|analysis|Cursor", read_txt(project_rules_path)))

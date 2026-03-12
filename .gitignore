@@ -4,14 +4,6 @@
 .Rproj.user
 *.Rproj.user/
 
-# Project (required for setup unit tests)
-analysis/data/
-_targets/
-_targets_r/
-
 # OS
 .DS_Store
 Thumbs.db
-
-# Optional: uncomment to ignore rendered HTML
-# analysis/scripts/1_targets_report.html
