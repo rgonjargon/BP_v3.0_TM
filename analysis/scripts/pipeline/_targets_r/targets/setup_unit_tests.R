@@ -9,6 +9,7 @@ tar_target(setup_unit_tests, {
     )
   }
   pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
+  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") pr <- dirname(dirname(getwd()))
   qmd_path <- qmd_file
   readme_path <- readme_file
   project_rules_path <- project_rules_file

@@ -4,6 +4,7 @@
 # Pipeline and outputs (required for setup unit tests)
 _targets/
 analysis/output/
+analysis/data/
 
 # R session / IDE
 .Rhistory

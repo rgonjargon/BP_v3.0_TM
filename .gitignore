@@ -4,6 +4,12 @@
 .Rproj.user
 *.Rproj.user/
 
+# Data and generated outputs (per project rules)
+analysis/data/
+analysis/output/
+_targets/
+_targets_r/
+
 # OS
 .DS_Store
 Thumbs.db

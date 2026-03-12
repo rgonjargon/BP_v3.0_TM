@@ -7,6 +7,8 @@ R + Quarto project: targets pipeline and analysis reports.
 ```text
 ├── analysis/           # Data, outputs, and pipeline
 │   ├── data/           # Raw and processed data (git-ignored)
+│   │   ├── import/     # Imported data (e.g. airquality.csv)
+│   │   └── simulate/   # Anonymized structure and simulation helpers
 │   ├── output/         # Generated outputs
 │   │   ├── models/     # Fitted models (e.g. .rds)
 │   │   ├── plots/      # Figures (600 DPI)
@@ -23,7 +25,7 @@ R + Quarto project: targets pipeline and analysis reports.
 ├── .cursor/            # Cursor rules
 ├── .cursorignore
 ├── .gitignore
-└── Project.Rproj
+└── project.Rproj
 ```
 
 ## Quick start
