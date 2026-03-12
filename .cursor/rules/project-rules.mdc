@@ -45,7 +45,6 @@ One concern per section. Follow these when editing or adding to the project.
 - **`README.md`** must exist at project root with a short project description, folder structure, and how to run the pipeline/report.
 - Project unit tests assert that these three files exist; add or update them when changing layout or tooling.
 - **Enforcement:** Removing or renaming any required root file, directory, or subdirectory listed in "Project directory structure" must cause `setup_unit_tests_ok` to fail (and thus block the rest of the pipeline).
-- **Verification:** Run `bash analysis/scripts/setup/verify_project_structure.sh` from project root to temporarily remove each item, run project unit tests (expect failure), then restore. Confirms every structural requirement is enforced.
 
 ---
 
