@@ -727,6 +727,7 @@ tryCatch({
 #| label: pipeline
 #| echo: false
 tryCatch({
+  setwd(root_dir)
   tar_make(reporter = "verbose_positives",
            garbage_collection = TRUE)
 }, error = function(e) {
