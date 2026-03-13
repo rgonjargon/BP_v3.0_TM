@@ -1,5 +1,8 @@
 # Block from Cursor indexing and @-references (same syntax as .gitignore)
 
+# Secrets (do not index)
+.env
+.env.local
 
 # Pipeline and outputs (required for setup unit tests)
 _targets/

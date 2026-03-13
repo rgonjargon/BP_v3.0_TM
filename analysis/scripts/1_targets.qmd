@@ -735,7 +735,7 @@ tryCatch({
       highlightNearest = list(enabled = TRUE, degree = 1, hover = TRUE),
       nodesIdSelection = FALSE
     ) |>
-    visLegend(enabled = FALSE) |>
+    visLegend(enabled = FALSE, useGroups = FALSE) |>
     visLayout(improvedLayout = TRUE)
 }, error = function(e) {
   message("Pipeline graph not shown: ", conditionMessage(e))
