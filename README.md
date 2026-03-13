@@ -85,6 +85,14 @@ quarto render analysis/scripts/1_targets.qmd
 
 Or in R before rendering: `cmdstanr::set_cmdstan_path("/path/to/cmdstan-2.36.0")`.
 
+## Targets data store
+
+The report (`1_targets.qmd`) reads results from the **targets** pipeline cache. The cache lives in `analysis/scripts/pipeline/_targets/` and is created when the pipeline runs (e.g. when you run `quarto render analysis/scripts/1_targets.qmd`, which runs `tar_make()` inside the report).
+
+- **To get full report content** (data, models, plots, tables): render the report once; the first render runs the pipeline and fills the cache. Subsequent renders reuse the cache unless targets are invalidated.
+- **To run only the pipeline** (e.g. from R or command line): from the project root, run `targets::tar_make()` with the working directory set to `analysis/scripts/pipeline`, or run the report once as above.
+- **If the store is missing:** the report still renders but sections that depend on the cache show placeholder messages (e.g. “Run the pipeline to generate targets”). Create the store by rendering the report or by running `tar_make()` from the pipeline directory.
+
 ## Reproducibility
 
 - Package versions are locked in `renv.lock`. Run `renv::restore()` to install exact versions.
