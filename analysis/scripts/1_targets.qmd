@@ -826,6 +826,7 @@ crew_tbl %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="
 <details><summary>Setup unit tests</summary>
 
 ```{r}
+#| label: setup-unit-tests-table
 #| echo: false
 setwd(root_dir)
 pt <- tar_read(setup_unit_tests)
@@ -878,6 +879,7 @@ A Bayesian regression model was fitted in R (R Core Team 2022) using the **brms*
 ## Data
 
 ```{r}
+#| label: data-struct-preview
 #| echo: false
 d <- tar_read(data_struct)
 str(d)
@@ -887,6 +889,7 @@ head(d)
 ## Summary
 
 ```{r}
+#| label: data-summary-table
 #| echo: false
 library(tidyverse)
 d <- tar_read(data_struct)
@@ -906,6 +909,7 @@ d %>%
 ## Models
 
 ```{r}
+#| label: fit-print
 #| echo: false
 fit_obj <- tar_read(fit)
 tryCatch(print(fit_obj), error = function(e) {
@@ -917,6 +921,7 @@ tryCatch(print(fit_obj), error = function(e) {
 **Stancode**
 
 ```{r}
+#| label: stan-code
 #| echo: false
 tar_read(stan_code)
 ```
@@ -924,6 +929,7 @@ tar_read(stan_code)
 ## Validation
 
 ```{r}
+#| label: pp-check-plot
 #| echo: false
 #| message: false
 #| fig-show: hold
@@ -938,6 +944,7 @@ p
 ## Analysis unit tests
 
 ```{r}
+#| label: analysis-unit-tests-table
 #| echo: false
 setwd(root_dir)
 pt <- tar_read(unit_tests)
@@ -980,6 +987,7 @@ writexl::write_xlsx(list(Summary = summary_tbl, Analysis_unit_tests = analysis_u
 
 - A biologist's guide to model selection and causal inference: <https://doi.org/10.1098/rspb.2020.2815></details>
 ```{r}
+#| label: causal-dag
 #| echo: false
 #| out-width: 50%
 #| fig-height: 4.5
@@ -995,6 +1003,7 @@ Figure 1: Causal diagram (DAG): exposure (`r doc_exposure`), mediator (`r doc_me
 
 ### Raw plots
 ```{r}
+#| label: raw-plots
 #| echo: false
 #| message: false
 #| fig-width: 8
@@ -1015,6 +1024,7 @@ Figure 2: Observed `r doc_outcome` (points) and posterior predictions from the G
 
 ### Effect plots
 ```{r}
+#| label: effect-plot-by-exposure
 #| echo: false
 #| message: false
 #| fig-show: hold
@@ -1032,6 +1042,7 @@ p_eff_temp
 Figure 3: Interaction effect of `r doc_mediator` on `r doc_outcome` at low vs high `r doc_exposure` (25th and 75th percentiles). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates `r doc_exposure` level.
 
 ```{r}
+#| label: effect-plot-by-covariate
 #| echo: false
 #| message: false
 #| fig-show: hold
@@ -1060,6 +1071,7 @@ R Core Team (2022). R: A language and environment for statistical computing. R F
 <details><summary>Report unit tests</summary>
 
 ```{r}
+#| label: report-unit-tests-table
 #| echo: false
 setwd(root_dir)
 pt <- tar_read(report_unit_tests)
