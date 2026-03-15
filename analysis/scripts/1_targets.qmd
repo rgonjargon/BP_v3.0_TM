@@ -278,10 +278,14 @@ tar_target(fit, {
         backend = "cmdstanr", silent = 0, refresh = 100,
         chains = 4, cores = 4, warmup = 1000, iter = 2000, seed = 42)
   }, error = function(e) {
-    brms::brm(mod_formula, family = list(gaussian(), gaussian()),
-        data = data,
-        backend = "rstan", silent = 0, refresh = 100,
-        chains = 4, cores = 4, warmup = 1000, iter = 2000, seed = 42)
+    if (requireNamespace("rstan", quietly = TRUE)) {
+      brms::brm(mod_formula, family = list(gaussian(), gaussian()),
+          data = data,
+          backend = "rstan", silent = 0, refresh = 100,
+          chains = 4, cores = 4, warmup = 1000, iter = 2000, seed = 42)
+    } else {
+      stop("cmdstanr backend failed and rstan is not installed. Install CmdStan (e.g. cmdstanr::install_cmdstan()) or install.packages(\"rstan\"). ", conditionMessage(e))
+    }
   })
 })
 ```
@@ -369,9 +373,13 @@ tar_target(plot_ozone_wind, {
     add_epred_draws(fit, ndraws = 100) %>%
     filter(.category == "logv1") %>%
     mutate(.epred = exp(.epred))
-  ggplot(pred_grid, aes(x = v3, y = .epred)) +
+  pred_summary <- pred_grid %>%
+    group_by(v3) %>%
+    summarise(mean_epred = mean(.epred), lower = quantile(.epred, 0.025), upper = quantile(.epred, 0.975), .groups = "drop")
+  ggplot(pred_summary, aes(x = v3, y = mean_epred, ymin = lower, ymax = upper)) +
     theme_classic() +
-    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#6699CC", color = "black") +
+    geom_ribbon(alpha = 0.8, fill = "#6699CC", color = NA) +
+    geom_line(aes(y = mean_epred), color = "black", linewidth = 1) +
     geom_point(data = data, aes(x = v3, y = v1), shape = 21, size = 2, inherit.aes = FALSE) +
     labs(
       title = "v1 vs v3",
@@ -390,10 +398,14 @@ tar_target(plot_ozone_temp, {
     add_epred_draws(fit, ndraws = 100) %>%
     filter(.category == "logv1") %>%
     mutate(.epred = exp(.epred))
+  pred_summary <- pred_grid %>%
+    group_by(v4) %>%
+    summarise(mean_epred = mean(.epred), lower = quantile(.epred, 0.025), upper = quantile(.epred, 0.975), .groups = "drop")
   v3_val <- round(mean(data$v3), 1)
-  ggplot(pred_grid, aes(x = v4, y = .epred)) +
+  ggplot(pred_summary, aes(x = v4, y = mean_epred, ymin = lower, ymax = upper)) +
     theme_classic() +
-    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#882255", color = "black") +
+    geom_ribbon(alpha = 0.8, fill = "#882255", color = NA) +
+    geom_line(aes(y = mean_epred), color = "black", linewidth = 1) +
     geom_point(data = data, aes(x = v4, y = v1), shape = 21, size = 2, inherit.aes = FALSE) +
     labs(
       title = "v1 vs v4",
@@ -412,9 +424,13 @@ tar_target(plot_ozone_solar_r, {
     add_epred_draws(fit, ndraws = 100) %>%
     filter(.category == "logv1") %>%
     mutate(.epred = exp(.epred))
-  ggplot(pred_grid, aes(x = v2, y = .epred)) +
+  pred_summary <- pred_grid %>%
+    group_by(v2) %>%
+    summarise(mean_epred = mean(.epred), lower = quantile(.epred, 0.025), upper = quantile(.epred, 0.975), .groups = "drop")
+  ggplot(pred_summary, aes(x = v2, y = mean_epred, ymin = lower, ymax = upper)) +
     theme_classic() +
-    stat_lineribbon(.width = .95, alpha = 0.8, fill = "#CC6677", color = "black") +
+    geom_ribbon(alpha = 0.8, fill = "#CC6677", color = NA) +
+    geom_line(aes(y = mean_epred), color = "black", linewidth = 1) +
     geom_point(data = data, aes(x = v2, y = v1), shape = 21, size = 2, inherit.aes = FALSE) +
     labs(
       title = "v1 vs v2",
@@ -801,13 +817,9 @@ crew_tbl %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="
 
 ```{r}
 #| echo: false
-tryCatch({
-  setwd(root_dir)
-  pt <- tar_read(setup_unit_tests)
-  pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
-}, error = function(e) {
-  cat("Setup unit tests not available. Run the pipeline (tar_make) first.\n")
-})
+setwd(root_dir)
+pt <- tar_read(setup_unit_tests)
+pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
 ```
 
 </details>
@@ -819,12 +831,10 @@ tryCatch({
 #| echo: false
 #| results: asis
 # Show notice when pipeline uses anonymised/synthetic data (e.g. from structure.rds).
-tryCatch({
-  ds <- tar_read(data_source)
-  if (isTRUE(ds$use_anonymised)) {
-    cat('::: {.callout-note}\n## Data source\nThis report uses **anonymised/synthetic data** (simulated from structure). No real observations are shown.\n:::\n')
-  }
-}, error = function(e) { invisible(NULL) })
+ds <- tar_read(data_source)
+if (isTRUE(ds$use_anonymised)) {
+  cat('::: {.callout-note}\n## Data source\nThis report uses **anonymised/synthetic data** (simulated from structure). No real observations are shown.\n:::\n')
+}
 ```
 
 ```{r}
@@ -836,10 +846,8 @@ doc_covariate <- "v2"
 doc_mediator <- "v3"
 doc_exposure <- "v4"
 doc_log_outcome <- "log(v1)"
-tryCatch({
-  ds <- tar_read(data_source)
-  doc_dataset_name <- if (isTRUE(ds$use_anonymised)) "synthetic data" else "imported data"
-}, error = function(e) { doc_dataset_name <- "the dataset" })
+ds <- tar_read(data_source)
+doc_dataset_name <- if (isTRUE(ds$use_anonymised)) "synthetic data" else "imported data"
 ```
 
 # Experiment and Data
@@ -889,23 +897,15 @@ d %>%
 
 ```{r}
 #| echo: false
-tryCatch({
-  fit_obj <- tar_read(fit)
-  print(fit_obj)
-}, error = function(e) {
-  cat("Model fit not available. Run the pipeline to generate targets.\n")
-})
+fit_obj <- tar_read(fit)
+print(fit_obj)
 ```
 
 **Stancode**
 
 ```{r}
 #| echo: false
-tryCatch({
-  tar_read(stan_code)
-}, error = function(e) {
-  cat("Stan code not available. Run the pipeline to generate targets.\n")
-})
+tar_read(stan_code)
 ```
 
 ## Validation
@@ -917,26 +917,18 @@ tryCatch({
 #| out-width: 50%
 #| fig-width: 4
 #| fig-height: 2
-tryCatch({
-  p <- tar_read(pp_check)
-  ggplot2::ggsave(file.path(plot_dir, "pp_check.png"), p, width = 4, height = 2, dpi = 600)
-  p
-}, error = function(e) {
-  cat("Validation plot not available.\n")
-})
+p <- tar_read(pp_check)
+ggplot2::ggsave(file.path(plot_dir, "pp_check.png"), p, width = 4, height = 2, dpi = 600)
+p
 ```
 
 ## Analysis unit tests
 
 ```{r}
 #| echo: false
-tryCatch({
-  setwd(root_dir)
-  pt <- tar_read(unit_tests)
-  pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
-}, error = function(e) {
-  cat("Analysis unit tests not available. Run the pipeline (tar_make) first.\n")
-})
+setwd(root_dir)
+pt <- tar_read(unit_tests)
+pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
 ```
 
 :::
@@ -947,28 +939,24 @@ tryCatch({
 #| include: false
 # Export final tables to single .xlsx (per project rules: analysis/output/tables/)
 setwd(root_dir)
-tryCatch({
-  library(tidyverse)
-  library(writexl)
-  d <- tar_read(data_struct)
-  summary_tbl <- d %>%
-    select(where(is.numeric)) %>%
-    pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-    group_by(variable) %>%
-    summarise(
-      mean = mean(value, na.rm = TRUE),
-      median = median(value, na.rm = TRUE),
-      range = paste(round(min(value, na.rm = TRUE), 2), "-", round(max(value, na.rm = TRUE), 2)),
-      sd = sd(value, na.rm = TRUE),
-      .groups = "drop"
-    )
-  analysis_unit_tests_tbl <- tar_read(unit_tests)
-  setup_unit_tests_tbl <- tar_read(setup_unit_tests)
-  tables_path <- file.path(tables_dir, "1_targets_report_tables.xlsx")
-  writexl::write_xlsx(list(Summary = summary_tbl, Analysis_unit_tests = analysis_unit_tests_tbl, Setup_unit_tests = setup_unit_tests_tbl), tables_path)
-}, error = function(e) {
-  message("Could not export tables to .xlsx: ", conditionMessage(e))
-})
+library(tidyverse)
+library(writexl)
+d <- tar_read(data_struct)
+summary_tbl <- d %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  group_by(variable) %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    median = median(value, na.rm = TRUE),
+    range = paste(round(min(value, na.rm = TRUE), 2), "-", round(max(value, na.rm = TRUE), 2)),
+    sd = sd(value, na.rm = TRUE),
+    .groups = "drop"
+  )
+analysis_unit_tests_tbl <- tar_read(unit_tests)
+setup_unit_tests_tbl <- tar_read(setup_unit_tests)
+tables_path <- file.path(tables_dir, "1_targets_report_tables.xlsx")
+writexl::write_xlsx(list(Summary = summary_tbl, Analysis_unit_tests = analysis_unit_tests_tbl, Setup_unit_tests = setup_unit_tests_tbl), tables_path)
 ```
 
 ### Causal diagram
@@ -985,13 +973,9 @@ tryCatch({
 #| fig-width: 9
 #| fig-align: center
 setwd(root_dir)
-tryCatch({
-  d <- tar_read(dag)
-  ggplot2::ggsave(file.path(plot_dir, "causal_dag.png"), d, width = 6, height = 4.5, dpi = 600)
-  d
-}, error = function(e) {
-  cat("DAG not available.\n")
-})
+d <- tar_read(dag)
+ggplot2::ggsave(file.path(plot_dir, "causal_dag.png"), d, width = 6, height = 4.5, dpi = 600)
+d
 ```
 
 Figure 1: Causal diagram (DAG): exposure (`r doc_exposure`), mediator (`r doc_mediator`), covariate (`r doc_covariate`), and outcome (`r doc_log_outcome`).
@@ -1003,20 +987,16 @@ Figure 1: Causal diagram (DAG): exposure (`r doc_exposure`), mediator (`r doc_me
 #| fig-width: 8
 #| fig-height: 7
 #| out-width: 100%
-tryCatch({
-  setwd(root_dir)
-  p_wind <- tar_read(plot_ozone_wind)
-  p_temp <- tar_read(plot_ozone_temp)
-  p_solar <- tar_read(plot_ozone_solar_r)
-  p_combined <- p_wind + p_temp + p_solar + plot_layout(ncol = 2)
-  ggplot2::ggsave(file.path(plot_dir, "v1_vs_v3_raw.png"), p_wind, width = 4, height = 3.5, dpi = 600)
-  ggplot2::ggsave(file.path(plot_dir, "v1_vs_v4_raw.png"), p_temp, width = 4, height = 3.5, dpi = 600)
-  ggplot2::ggsave(file.path(plot_dir, "v1_vs_v2_raw.png"), p_solar, width = 4, height = 3.5, dpi = 600)
-  ggplot2::ggsave(file.path(plot_dir, "raw_plots_v1_v2_v3_v4.png"), p_combined, width = 8, height = 7, dpi = 600)
-  p_combined
-}, error = function(e) {
-  cat("Raw plots not available. Run the pipeline (tar_make) first.\n")
-})
+setwd(root_dir)
+p_wind <- tar_read(plot_ozone_wind)
+p_temp <- tar_read(plot_ozone_temp)
+p_solar <- tar_read(plot_ozone_solar_r)
+p_combined <- p_wind + p_temp + p_solar + plot_layout(ncol = 2)
+ggplot2::ggsave(file.path(plot_dir, "v1_vs_v3_raw.png"), p_wind, width = 4, height = 3.5, dpi = 600)
+ggplot2::ggsave(file.path(plot_dir, "v1_vs_v4_raw.png"), p_temp, width = 4, height = 3.5, dpi = 600)
+ggplot2::ggsave(file.path(plot_dir, "v1_vs_v2_raw.png"), p_solar, width = 4, height = 3.5, dpi = 600)
+ggplot2::ggsave(file.path(plot_dir, "raw_plots_v1_v2_v3_v4.png"), p_combined, width = 8, height = 7, dpi = 600)
+p_combined
 ```
 Figure 2: Observed `r doc_outcome` (points) and posterior predictions from the Gaussian model for `r doc_log_outcome`, back-transformed to `r doc_outcome` scale. Left: `r doc_outcome` vs `r doc_mediator`. Centre: `r doc_outcome` vs `r doc_exposure`. Right: `r doc_outcome` vs `r doc_covariate`. Shaded bands show the 95% credible interval; the solid line is the posterior median.
 
@@ -1029,16 +1009,12 @@ Figure 2: Observed `r doc_outcome` (points) and posterior predictions from the G
 #| fig-height: 4
 #| out-width: 100%
 #| classes: "fig-squeeze"
-tryCatch({
-  setwd(root_dir)
-  p_eff_temp <- tar_read(eff_wind_by_temp)
-  p_eff_solar <- tar_read(eff_wind_by_solar_r)
-  ggplot2::ggsave(file.path(plot_dir, "effect_v3_by_v4.png"), p_eff_temp, width = 8, height = 4, dpi = 600)
-  ggplot2::ggsave(file.path(plot_dir, "effect_v3_by_v2.png"), p_eff_solar, width = 8, height = 4, dpi = 600)
-  p_eff_temp
-}, error = function(e) {
-  cat("Effect plot not available.\n")
-})
+setwd(root_dir)
+p_eff_temp <- tar_read(eff_wind_by_temp)
+p_eff_solar <- tar_read(eff_wind_by_solar_r)
+ggplot2::ggsave(file.path(plot_dir, "effect_v3_by_v4.png"), p_eff_temp, width = 8, height = 4, dpi = 600)
+ggplot2::ggsave(file.path(plot_dir, "effect_v3_by_v2.png"), p_eff_solar, width = 8, height = 4, dpi = 600)
+p_eff_temp
 ```
 Figure 3: Interaction effect of `r doc_mediator` on `r doc_outcome` at low vs high `r doc_exposure` (25th and 75th percentiles). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates `r doc_exposure` level.
 
@@ -1050,13 +1026,9 @@ Figure 3: Interaction effect of `r doc_mediator` on `r doc_outcome` at low vs hi
 #| fig-height: 4
 #| out-width: 100%
 #| classes: "fig-squeeze"
-tryCatch({
-  setwd(root_dir)
-  p_eff_solar <- tar_read(eff_wind_by_solar_r)
-  p_eff_solar
-}, error = function(e) {
-  cat("Effect plot (mediator by covariate) not available.\n")
-})
+setwd(root_dir)
+p_eff_solar <- tar_read(eff_wind_by_solar_r)
+p_eff_solar
 ```
 Figure 4: Effect of `r doc_mediator` on `r doc_outcome` at low vs high `r doc_covariate` (25th and 75th percentiles). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates `r doc_covariate` level.
 
@@ -1076,14 +1048,10 @@ R Core Team (2022). R: A language and environment for statistical computing. R F
 
 ```{r}
 #| echo: false
-tryCatch({
-  setwd(root_dir)
-  pt <- tar_read(report_unit_tests)
-  pt %>% dplyr::select(test, Passed = passed_html) %>%
-    knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
-}, error = function(e) {
-  cat("Report unit tests not available. Run the pipeline (tar_make) first.\n")
-})
+setwd(root_dir)
+pt <- tar_read(report_unit_tests)
+pt %>% dplyr::select(test, Passed = passed_html) %>%
+  knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
 ```
 
 </details>
