@@ -30,9 +30,15 @@ pkgs <- c(
   "privacyR",  # used by analysis/data/simulate/anonymize.R (offline, not part of pipeline)
   "readr"
 )
+repos <- c(CRAN = "https://cloud.r-project.org/")
 for (p in pkgs) {
   if (!requireNamespace(p, quietly = TRUE)) {
-    install.packages(p, repos = "https://cloud.r-project.org/")
+    if (requireNamespace("renv", quietly = TRUE) && !is.null(renv::project())) {
+      # Install to project library; renv shim can say "not available" for packages not in lockfile
+      utils::install.packages(p, repos = repos, lib = .libPaths()[1L], quiet = TRUE)
+    } else {
+      install.packages(p, repos = repos)
+    }
   }
 }
 
