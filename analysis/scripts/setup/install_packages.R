@@ -4,6 +4,17 @@
 # Run from project root: Rscript analysis/scripts/setup/install_packages.R
 # Or from R: source("analysis/scripts/setup/install_packages.R")
 
+# When renv is active and lockfile exists, restore first so dependencies install from
+# the lockfile (preferring binaries from CRAN). This avoids building from source on
+# fresh clones, which can fail on macOS when Fortran toolchains differ (e.g. mvtnorm).
+if (requireNamespace("renv", quietly = TRUE)) {
+  project_root <- tryCatch(renv::project(), error = function(e) getwd())
+  lockfile <- file.path(project_root, "renv.lock")
+  if (file.exists(lockfile)) {
+    renv::restore(project = project_root, prompt = FALSE, repos = c(CRAN = "https://cloud.r-project.org"))
+  }
+}
+
 pkgs <- c(
   "tidyverse", "janitor", "modelr", "tidybayes", "brms",
   "bayesplot", "ggdag", "ggraph", "cmdstanr", "rstan", "targets", "crew", "patchwork", "testthat",
