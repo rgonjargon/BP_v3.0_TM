@@ -6,7 +6,7 @@
 
 pkgs <- c(
   "tidyverse", "janitor", "modelr", "tidybayes", "brms",
-  "bayesplot", "ggdag", "ggraph", "cmdstanr", "targets", "crew", "patchwork", "testthat",
+  "bayesplot", "ggdag", "ggraph", "cmdstanr", "rstan", "targets", "crew", "patchwork", "testthat",
   "writexl", "visNetwork",
   "privacyR",  # used by analysis/data/simulate/anonymize.R (offline, not part of pipeline)
   "readr"

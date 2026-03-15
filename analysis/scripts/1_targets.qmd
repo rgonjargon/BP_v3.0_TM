@@ -73,6 +73,16 @@ dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
 if (requireNamespace("renv", quietly = TRUE) && file.exists(file.path(project_root, "renv/activate.R"))) {
   renv::activate(project_root)
 }
+# Run install script so required packages (e.g. rstan) are installed when rendering from a fresh clone
+install_script <- file.path(project_root, "analysis", "scripts", "setup", "install_packages.R")
+if (file.exists(install_script)) {
+  source(install_script, local = FALSE)
+}
+# Ensure rstan is loaded so print(fit) and renv dependency discovery work
+if (!requireNamespace("rstan", quietly = TRUE)) {
+  stop("rstan is required. Run: source(\"", install_script, "\") or install.packages(\"rstan\")")
+}
+suppressPackageStartupMessages(library(rstan, quietly = TRUE))
 # CmdStan: on Linux (cluster) use known path if it exists; else use CMDSTAN_PATH if set; otherwise default
 cluster_cmdstan <- "/powerplant/workspace/hrltxm/workbench-k8s/stan/mod_stan/cmdstan-2.36.0"
 if (Sys.info()["sysname"] == "Linux" && dir.exists(cluster_cmdstan) && !nzchar(Sys.getenv("CMDSTAN_PATH"))) {
@@ -91,7 +101,7 @@ tar_option_set(format = "rds",
                seed = 42,
                packages = c(
                  "tidyverse", "janitor", "modelr", "tidybayes", "brms",
-                 "bayesplot", "ggdag", "ggraph", "cmdstanr", "targets", "patchwork", "testthat"))
+                 "bayesplot", "ggdag", "ggraph", "cmdstanr", "rstan", "targets", "patchwork", "testthat"))
 ```
 
 
@@ -898,7 +908,10 @@ d %>%
 ```{r}
 #| echo: false
 fit_obj <- tar_read(fit)
-print(fit_obj)
+tryCatch(print(fit_obj), error = function(e) {
+  message("Fit object not printed (backend package may be missing): ", conditionMessage(e))
+  message("Run analysis/scripts/setup/install_packages.R or install.packages(\"rstan\") so the full fit can be displayed.")
+})
 ```
 
 **Stancode**
