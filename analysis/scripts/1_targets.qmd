@@ -91,7 +91,7 @@ tar_option_set(format = "rds",
                seed = 42,
                packages = c(
                  "tidyverse", "janitor", "modelr", "tidybayes", "brms",
-                 "bayesplot", "ggdag", "cmdstanr", "targets", "patchwork", "testthat"))
+                 "bayesplot", "ggdag", "ggraph", "cmdstanr", "targets", "patchwork", "testthat"))
 ```
 
 
@@ -641,7 +641,7 @@ tar_target(setup_unit_tests, {
   # Pipeline packages (must match tar_option_set(packages = ...) in globals)
   pipeline_packages <- c(
     "tidyverse", "janitor", "modelr", "tidybayes", "brms",
-    "bayesplot", "ggdag", "cmdstanr", "targets", "patchwork", "testthat"
+    "bayesplot", "ggdag", "ggraph", "cmdstanr", "targets", "patchwork", "testthat"
   )
   package_tests <- lapply(pipeline_packages, function(pkg) {
     run_one(paste0("Package: ", pkg), {
