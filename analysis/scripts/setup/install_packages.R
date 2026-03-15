@@ -13,6 +13,14 @@ if (requireNamespace("renv", quietly = TRUE)) {
   if (file.exists(lockfile)) {
     renv::restore(project = project_root, prompt = FALSE, repos = c(CRAN = "https://cloud.r-project.org"))
   }
+  # On macOS, mvtnorm often fails to build from source (Fortran linker). Install from binary
+  # so later installs (e.g. brms deps) do not trigger a source build.
+  if (Sys.info()["sysname"] == "Darwin" && !requireNamespace("mvtnorm", quietly = TRUE)) {
+    tryCatch(
+      utils::install.packages("mvtnorm", type = "binary", repos = "https://cloud.r-project.org", lib = .libPaths()[1L], quiet = TRUE),
+      error = function(e) NULL
+    )
+  }
 }
 
 pkgs <- c(
