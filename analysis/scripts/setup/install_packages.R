@@ -9,6 +9,9 @@
 # fresh clones, which can fail on macOS when Fortran toolchains differ (e.g. mvtnorm).
 if (requireNamespace("renv", quietly = TRUE)) {
   project_root <- tryCatch(renv::project(), error = function(e) getwd())
+  if (length(project_root) != 1L || !nzchar(project_root)) {
+    project_root <- getwd()
+  }
   lockfile <- file.path(project_root, "renv.lock")
   if (file.exists(lockfile)) {
     renv::restore(project = project_root, prompt = FALSE, repos = c(CRAN = "https://cloud.r-project.org"))
