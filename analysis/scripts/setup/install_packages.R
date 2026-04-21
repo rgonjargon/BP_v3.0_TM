@@ -4,17 +4,18 @@
 # Run from project root: Rscript analysis/scripts/setup/install_packages.R
 # Or from R: source("analysis/scripts/setup/install_packages.R")
 
+repos <- c(CRAN = "https://cloud.r-project.org/")
+if (!requireNamespace("here", quietly = TRUE)) {
+  utils::install.packages("here", repos = repos, quiet = TRUE)
+}
+
 # When renv is active and lockfile exists, restore first so dependencies install from
 # the lockfile (preferring binaries from CRAN). This avoids building from source on
 # fresh clones, which can fail on macOS when Fortran toolchains differ (e.g. mvtnorm).
 if (requireNamespace("renv", quietly = TRUE)) {
-  project_root <- tryCatch(renv::project(), error = function(e) getwd())
-  if (length(project_root) != 1L || !nzchar(project_root)) {
-    project_root <- getwd()
-  }
-  lockfile <- file.path(project_root, "renv.lock")
+  lockfile <- here::here("renv.lock")
   if (file.exists(lockfile)) {
-    renv::restore(project = project_root, prompt = FALSE, repos = c(CRAN = "https://cloud.r-project.org"))
+    renv::restore(project = here::here(), prompt = FALSE, repos = repos)
   }
   # On macOS, mvtnorm often fails to build from source (Fortran linker). Install from binary
   # so later installs (e.g. brms deps) do not trigger a source build.
@@ -27,13 +28,13 @@ if (requireNamespace("renv", quietly = TRUE)) {
 }
 
 pkgs <- c(
+  "here",
   "tidyverse", "janitor", "modelr", "tidybayes", "brms",
   "bayesplot", "ggdag", "ggraph", "cmdstanr", "rstan", "targets", "crew", "patchwork", "testthat",
   "writexl", "visNetwork",
   "privacyR",  # used by analysis/data/simulate/anonymize.R (offline, not part of pipeline)
   "readr"
 )
-repos <- c(CRAN = "https://cloud.r-project.org/")
 for (p in pkgs) {
   if (!requireNamespace(p, quietly = TRUE)) {
     if (requireNamespace("renv", quietly = TRUE) && !is.null(renv::project())) {
@@ -45,7 +46,9 @@ for (p in pkgs) {
   }
 }
 
-# CmdStan: on Linux (cluster) use known path if it exists; else CMDSTAN_PATH if set; otherwise install if not present.
+# CmdStan: this script does not install CmdStan binaries. Set CMDSTAN_PATH to your CmdStan root
+# (or rely on the Linux cluster path below when Sys.setenv is used before cmdstanr::set_cmdstan_path).
+# Optional: cmdstanr::install_cmdstan() interactively if you need a local toolchain.
 cluster_cmdstan <- "/powerplant/workspace/hrltxm/workbench-k8s/stan/mod_stan/cmdstan-2.36.0"
 if (Sys.info()["sysname"] == "Linux" && dir.exists(cluster_cmdstan) && !nzchar(Sys.getenv("CMDSTAN_PATH"))) {
   Sys.setenv(CMDSTAN_PATH = cluster_cmdstan)

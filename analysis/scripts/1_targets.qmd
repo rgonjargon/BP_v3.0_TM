@@ -7,11 +7,18 @@ format:
   html:
     output-file: 1_targets_report.html
     embed-resources: true
+    grid:
+      margin-width: 350px
+    reference-location: margin
+    citation-location: margin
     include-in-header:
       text: |
         <style>
         .fig-squeeze .figure, .fig-squeeze .quarto-float-figure { margin-bottom: 0 !important; }
         .quarto-title-block .subtitle, .subtitle { font-size: 0.85em; opacity: 0.9; font-style: italic; }
+        #quarto-margin-sidebar .csl-entry { font-size: 0.85em; line-height: 1.35; }
+        details > summary { font-size: 0.85em; line-height: 1.35; }
+        .panel-tabset#analysis-tabs .tab-content > .tab-pane:nth-child(4) { font-size: 0.85em; line-height: 1.35; }
         </style>
     df-print: paged
     toc: true
@@ -19,6 +26,7 @@ format:
     toc-depth: 5
     theme: united
     highlight-style: tango
+    code-tools: true
     fig-width: 5
     fig-height: 3
 execute:
@@ -33,14 +41,24 @@ execute:
 #| warning: false
 # Setup
 # Set root directory so targets store is found (analysis/scripts/pipeline/)
-root_dir <- getwd()
-pipeline_dir <- file.path(root_dir, "analysis", "scripts", "pipeline")
+# Ensure required lightweight helpers are present before loading
+# (fresh renders can fail before analysis/scripts/setup/install_packages.R runs)
+if (!requireNamespace("here", quietly = TRUE)) {
+  suppressMessages(
+    install.packages(
+      c("here", "targets"),
+      repos = "https://cloud.r-project.org/",
+      quiet = TRUE
+    )
+  )
+}
+library(here)
+project_root <- here::here()
+pipeline_dir <- here::here("analysis", "scripts", "pipeline")
 if (!file.exists(file.path(pipeline_dir, "_targets.R"))) {
-  pipeline_dir <- file.path(root_dir, "pipeline")  # when run from analysis/scripts/
+  pipeline_dir <- here::here("pipeline")
 }
-if (file.exists(file.path(pipeline_dir, "_targets.R"))) {
-  root_dir <- pipeline_dir
-}
+root_dir <- if (file.exists(file.path(pipeline_dir, "_targets.R"))) pipeline_dir else project_root
 knitr::opts_knit$set(root.dir = root_dir)
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(targets)
@@ -53,28 +71,21 @@ if (!requireNamespace("crew", quietly = TRUE)) {
     )
   )
 }
-tar_unscript()
-# Project root: from pipeline dir go up 3; from analysis/scripts go up 2; else use getwd()
-project_root <- if (basename(getwd()) == "pipeline") {
-  dirname(dirname(dirname(getwd())))
-} else if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") {
-  dirname(dirname(getwd()))
-} else {
-  getwd()
-}
+# Clear pipeline helper scripts (_targets_r/) so removed targets are not loaded
+tar_unscript(script = file.path(root_dir, "_targets.R"))
 # Plots, tables, and models (always under analysis/output per project rules)
-plot_dir <- file.path(project_root, "analysis", "output", "plots")
-tables_dir <- file.path(project_root, "analysis", "output", "tables")
-models_dir <- file.path(project_root, "analysis", "output", "models")
+plot_dir <- here::here("analysis", "output", "plots")
+tables_dir <- here::here("analysis", "output", "tables")
+models_dir <- here::here("analysis", "output", "models")
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
 # Activate renv so this session and crew workers see the project library (fixes missing janitor/tidybayes/ggdag in tar_make)
-if (requireNamespace("renv", quietly = TRUE) && file.exists(file.path(project_root, "renv/activate.R"))) {
-  renv::activate(project_root)
+if (requireNamespace("renv", quietly = TRUE) && file.exists(here::here("renv", "activate.R"))) {
+  renv::activate(here::here())
 }
 # Run install script so required packages (e.g. rstan) are installed when rendering from a fresh clone
-install_script <- file.path(project_root, "analysis", "scripts", "setup", "install_packages.R")
+install_script <- here::here("analysis", "scripts", "setup", "install_packages.R")
 if (file.exists(install_script)) {
   source(install_script, local = FALSE)
 }
@@ -83,13 +94,30 @@ if (!requireNamespace("rstan", quietly = TRUE)) {
   stop("rstan is required. Run: source(\"", install_script, "\") or install.packages(\"rstan\")")
 }
 suppressPackageStartupMessages(library(rstan, quietly = TRUE))
-# CmdStan: on Linux (cluster) use known path if it exists; else use CMDSTAN_PATH if set; otherwise default
+# CmdStan (cmdstanr): set CMDSTAN_PATH when known; otherwise validate existing path or print a note.
+# This project does not run cmdstanr::install_cmdstan() from the report (see install_packages.R).
 cluster_cmdstan <- "/powerplant/workspace/hrltxm/workbench-k8s/stan/mod_stan/cmdstan-2.36.0"
 if (Sys.info()["sysname"] == "Linux" && dir.exists(cluster_cmdstan) && !nzchar(Sys.getenv("CMDSTAN_PATH"))) {
   Sys.setenv(CMDSTAN_PATH = cluster_cmdstan)
 }
-if (nzchar(Sys.getenv("CMDSTAN_PATH")) && requireNamespace("cmdstanr", quietly = TRUE)) {
-  cmdstanr::set_cmdstan_path(Sys.getenv("CMDSTAN_PATH"))
+if (requireNamespace("cmdstanr", quietly = TRUE)) {
+  path <- Sys.getenv("CMDSTAN_PATH")
+  if (nzchar(path)) {
+    cmdstanr::set_cmdstan_path(path)
+  } else {
+    ok <- tryCatch({
+      cp <- cmdstanr::cmdstan_path()
+      !is.null(cp) && nzchar(cp) && dir.exists(cp)
+    }, error = function(e) FALSE)
+    if (!ok) {
+      writeLines(paste0(
+        "NOTE: Set CMDSTAN_PATH to your CmdStan installation for the brms cmdstanr backend. ",
+        "The fit target falls back to rstan when cmdstanr fails."
+      ))
+    }
+  }
+} else {
+  writeLines("NOTE: cmdstanr is not installed; brms will use the rstan backend when available.")
 }
 ```
 ```{targets example-globals, tar_globals = TRUE}
@@ -101,7 +129,12 @@ tar_option_set(format = "rds",
                seed = 42,
                packages = c(
                  "tidyverse", "janitor", "modelr", "tidybayes", "brms",
-                 "bayesplot", "ggdag", "ggraph", "cmdstanr", "rstan", "targets", "patchwork", "testthat"))
+                 "bayesplot", "ggdag", "ggraph", "cmdstanr", "rstan", "targets", "patchwork", "testthat", "here"))
+
+pf <- here::here("analysis", "scripts", "pipeline", "pipeline_functions.R")
+if (file.exists(pf)) {
+  source(pf, local = TRUE)
+}
 ```
 
 
@@ -112,19 +145,8 @@ tar_option_set(format = "rds",
 # Encoding existence in the target value ensures downstream targets (e.g. raw_data) use the right branch.
 # If you add or remove airquality.csv in import/, run targets::tar_invalidate(raw_data_file) then tar_make() to refresh.
 tar_target(raw_data_file, {
-  pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
-  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") pr <- dirname(dirname(getwd()))
-  path <- file.path(pr, "analysis", "data", "import", "airquality.csv")
+  path <- here::here("analysis", "data", "import", "airquality.csv")
   list(path = path, exists = file.exists(path))
-})
-```
-
-```{targets data_source}
-#| include: false
-#| echo: false
-# Data source mode: use_import when airquality.csv exists, use_anonymised when pipeline simulates (e.g. from structure.rds).
-tar_target(data_source, {
-  list(use_import = raw_data_file$exists, use_anonymised = !raw_data_file$exists)
 })
 ```
 
@@ -134,10 +156,7 @@ tar_target(data_source, {
 # Structure for simulation: read from analysis/data/simulate/structure.rds.
 # Accepts (1) a list with n and columns (type/min/max per column), or (2) a data frame (derived from str(df)-style info: nrow, column types, ranges).
 tar_target(simulate_structure, {
-  pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
-  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") pr <- dirname(dirname(getwd()))
-  sim_dir <- file.path(pr, "analysis", "data", "simulate")
-  struct_file <- file.path(sim_dir, "structure.rds")
+  struct_file <- here::here("analysis", "data", "simulate", "structure.rds")
   default <- list(
     n = 153L,
     columns = list(
@@ -184,8 +203,7 @@ tar_target(raw_data, {
   path <- raw_data_file$path
   if (isTRUE(raw_data_file$exists)) {
     d <- readr::read_csv(path, show_col_types = FALSE)
-    pr <- dirname(dirname(dirname(dirname(path))))
-    mapping_path <- file.path(pr, "analysis", "data", "import", "column_mapping.R")
+    mapping_path <- here::here("analysis", "data", "import", "column_mapping.R")
     if (!file.exists(mapping_path)) stop("column_mapping.R not found in analysis/data/import/")
     map_env <- new.env()
     source(mapping_path, local = map_env)
@@ -223,7 +241,7 @@ tar_target(raw_data, {
   })
   names(out) <- names(cols)
   tibble::as_tibble(out)
-}, packages = "readr")
+}, packages = c("readr", "here"))
 ```
 ```{targets wrangling}
 #| include: false
@@ -247,6 +265,35 @@ tar_target(data_struct, data)
 # Summary
 tar_target(data_summary, data %>% summarise(across(everything(), mean)))
 ```
+
+```{targets data_unit_tests}
+#| include: false
+#| echo: false
+# Data quality checks (non-blocking for the pipeline gate); messages failures in the report only.
+tar_target(data_unit_tests, {
+  library(testthat)
+  library(tibble)
+  run_one <- function(name, expr) {
+    tryCatch(
+      { force(expr); tibble(test = name, passed = TRUE) },
+      error = function(e) tibble(test = name, passed = FALSE)
+    )
+  }
+  d <- data_struct
+  dplyr::bind_rows(
+    run_one("Data: nrow > 0", testthat::expect_true(nrow(d) > 0L)),
+    run_one("Data: columns v1-v4 present", testthat::expect_true(all(c("v1", "v2", "v3", "v4") %in% names(d)))),
+    run_one("Data: log_v1 present after wrangling", testthat::expect_true("log_v1" %in% names(d))),
+    run_one("Data: v1 positive where finite", testthat::expect_true(all(d$v1[!is.na(d$v1)] > 0, na.rm = TRUE)))
+  ) %>%
+    dplyr::arrange(passed) %>%
+    dplyr::mutate(
+      passed_display = dplyr::if_else(passed, "\u2191", "\u2717"),
+      passed_html = dplyr::if_else(passed, '<span style="color:#16a34a">\u2191</span>', '<span style="color:#dc2626">\u2717</span>')
+    )
+}, packages = c("testthat", "tidyverse"))
+```
+
 ```{targets stan_code}
 #| include: false
 #| echo: false
@@ -305,11 +352,9 @@ tar_target(fit, {
 #| echo: false
 # Save Bayesian fit to analysis/output/models (per project rules); runs after fit so file is always written
 tar_target(fit_saved, {
-  pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
-  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") pr <- dirname(dirname(getwd()))
-  models_dir <- file.path(pr, "analysis", "output", "models")
+  models_dir <- here::here("analysis", "output", "models")
   dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
-  path <- file.path(models_dir, "bayesian_fit.rds")
+  path <- here::here("analysis", "output", "models", "bayesian_fit.rds")
   saveRDS(fit, path)
   path
 }, format = "file")
@@ -541,9 +586,7 @@ tar_target(unit_tests, {
 #| echo: false
 # Track 1_targets.qmd so setup_unit_tests invalidates when the report is edited (e.g. title change)
 tar_target(qmd_file, {
-  project_root <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
-  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") project_root <- dirname(dirname(getwd()))
-  file.path(project_root, "analysis", "scripts", "1_targets.qmd")
+  here::here("analysis", "scripts", "1_targets.qmd")
 }, format = "file")
 ```
 
@@ -551,10 +594,9 @@ tar_target(qmd_file, {
 #| include: false
 #| echo: false
 # Track README.md so setup_unit_tests invalidates when README is edited
+# Path is repo root README.md (here::here() must resolve to repo root — use root _quarto.yml only).
 tar_target(readme_file, {
-  project_root <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
-  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") project_root <- dirname(dirname(getwd()))
-  file.path(project_root, "README.md")
+  here::here("README.md")
 }, format = "file")
 ```
 
@@ -563,9 +605,7 @@ tar_target(readme_file, {
 #| echo: false
 # Track project rules so setup_unit_tests invalidates when rules are edited
 tar_target(project_rules_file, {
-  project_root <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
-  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") project_root <- dirname(dirname(getwd()))
-  file.path(project_root, ".cursor", "rules", "project-rules.mdc")
+  here::here(".cursor", "rules", "project-rules.mdc")
 }, format = "file")
 ```
 
@@ -574,9 +614,7 @@ tar_target(project_rules_file, {
 #| echo: false
 # Track install_packages.R so setup_unit_tests invalidates when package list changes
 tar_target(install_packages_file, {
-  project_root <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
-  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") project_root <- dirname(dirname(getwd()))
-  file.path(project_root, "analysis", "scripts", "setup", "install_packages.R")
+  here::here("analysis", "scripts", "setup", "install_packages.R")
 }, format = "file")
 ```
 
@@ -593,13 +631,18 @@ tar_target(setup_unit_tests, {
       error = function(e) tibble(test = name, passed = FALSE)
     )
   }
-  pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
-  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") pr <- dirname(dirname(getwd()))
   qmd_path <- qmd_file
   readme_path <- readme_file
   project_rules_path <- project_rules_file
   install_packages_path <- install_packages_file
-  p <- function(...) file.path(pr, ...)
+  p <- function(...) {
+    dots <- list(...)
+    if (length(dots) == 1L && nzchar(dots[[1L]]) && grepl("/", dots[[1L]], fixed = TRUE)) {
+      file.path(here::here(), dots[[1L]])
+    } else {
+      do.call(here::here, dots)
+    }
+  }
   read_txt <- function(path) paste(readLines(path, warn = FALSE), collapse = " ")
 
   dirs <- setNames(c("analysis", "analysis/data", "analysis/data/import", "analysis/output", "analysis/output/models", "analysis/output/plots", "analysis/output/tables", "analysis/scripts", "analysis/scripts/pipeline", "analysis/scripts/setup", "docs", ".cursor/rules"),
@@ -608,7 +651,7 @@ tar_target(setup_unit_tests, {
 
   files <- setNames(c(".cursorignore", ".gitignore", "README.md"), c("File: .cursorignore", "File: .gitignore", "File: README.md"))
   file_tests <- lapply(seq_along(files), function(i) run_one(paste0(names(files)[i], " at root"), testthat::expect_true(file.exists(p(files[i])))))
-  rproj_test <- list(run_one("File: .Rproj at root", testthat::expect_true(length(list.files(pr, pattern = "\\.Rproj$")) >= 1L)))
+  rproj_test <- list(run_one("File: .Rproj at root", testthat::expect_true(length(list.files(here::here(), pattern = "\\.Rproj$")) >= 1L)))
 
   qmd <- if (file.exists(qmd_path)) read_txt(qmd_path) else ""
   git <- function(...) tryCatch(system2("git", c(...), stdout = TRUE, stderr = FALSE), error = function(e) character(0))
@@ -651,7 +694,7 @@ tar_target(setup_unit_tests, {
   # Pipeline packages (must match tar_option_set(packages = ...) in globals)
   pipeline_packages <- c(
     "tidyverse", "janitor", "modelr", "tidybayes", "brms",
-    "bayesplot", "ggdag", "ggraph", "cmdstanr", "targets", "patchwork", "testthat"
+    "bayesplot", "ggdag", "ggraph", "cmdstanr", "rstan", "targets", "patchwork", "testthat", "here"
   )
   package_tests <- lapply(pipeline_packages, function(pkg) {
     run_one(paste0("Package: ", pkg), {
@@ -674,30 +717,31 @@ tar_target(setup_unit_tests, {
       passed_display = dplyr::if_else(passed, "\u2191", "\u2717"),
       passed_html = dplyr::if_else(passed, '<span style="color:#16a34a">\u2191</span>', '<span style="color:#dc2626">\u2717</span>')
     )
-}, packages = c("testthat", "tidyverse"))
+}, packages = c("testthat", "tidyverse", "here"))
 ```
 
 ```{targets report_unit_tests}
 #| include: false
 #| echo: false
-# Report unit tests: setup + analysis summary, Git release readiness, and report/output checks
+# Report unit tests: setup + data checks + analysis summary, Git release readiness, and report/output checks
 tar_target(report_unit_tests, {
   pt_setup <- setup_unit_tests
+  pt_data <- data_unit_tests
+  data_all_passed <- nrow(pt_data) > 0L && all(pt_data$passed)
   pt_analysis <- unit_tests
-  pr <- if (basename(getwd()) == "pipeline") dirname(dirname(dirname(getwd()))) else getwd()
-  if (basename(getwd()) == "scripts" && basename(dirname(getwd())) == "analysis") pr <- dirname(dirname(getwd()))
   git_ok <- pt_setup %>% dplyr::filter(grepl("^Git:", .data$test)) %>% dplyr::pull(.data$passed) %>% all()
-  report_path <- file.path(pr, "analysis", "scripts", "1_targets_report.html")
-  plot_dir <- file.path(pr, "analysis", "output", "plots")
-  models_dir <- file.path(pr, "analysis", "output", "models")
+  report_path <- here::here("analysis", "scripts", "1_targets_report.html")
+  plot_dir <- here::here("analysis", "output", "plots")
+  models_dir <- here::here("analysis", "output", "models")
   report_exists <- file.exists(report_path)
   key_plots_ok <- all(file.exists(file.path(plot_dir, c(
     "effect_v3_by_v4.png", "effect_v3_by_v2.png", "causal_dag.png",
     "pp_check.png", "v1_vs_v3_raw.png", "v1_vs_v4_raw.png", "v1_vs_v2_raw.png"
   ))))
-  model_saved <- file.exists(file.path(models_dir, "bayesian_fit.rds"))
+  model_saved <- file.exists(here::here("analysis", "output", "models", "bayesian_fit.rds"))
   dplyr::bind_rows(
     dplyr::tibble(test = "All setup unit tests pass", passed = all(pt_setup$passed)),
+    dplyr::tibble(test = "Data quality checks: all passed", passed = data_all_passed),
     dplyr::tibble(test = "All analysis unit tests pass", passed = all(pt_analysis$passed)),
     dplyr::tibble(test = "Git: release readiness (branch main, clean tree, origin)", passed = git_ok),
     dplyr::tibble(test = "Report output exists", passed = report_exists),
@@ -706,7 +750,7 @@ tar_target(report_unit_tests, {
     dplyr::mutate(
       passed_html = dplyr::if_else(passed, '<span style="color:#16a34a">\u2191</span>', '<span style="color:#dc2626">\u2717</span>')
     )
-}, packages = "dplyr")
+}, packages = c("dplyr", "here"))
 ```
 
 ```{targets setup_unit_tests_ok}
@@ -724,6 +768,8 @@ tar_target(setup_unit_tests_ok, {
 ```
 
 <details><summary>Pipeline</summary>
+
+- The library is already synchronized with the lockfile.
 
 ```{r}
 #| label: visnet
@@ -777,8 +823,7 @@ tryCatch({
   tar_make(reporter = "verbose_positives",
            garbage_collection = TRUE)
 }, error = function(e) {
-  cat("Note: Pipeline execution encountered an error:", conditionMessage(e), "\n")
-  cat("Some targets may not be available. Check tar_meta() for details.\n")
+  stop("Pipeline execution failed in `tar_make()`:\n", conditionMessage(e), call. = FALSE)
 })
 ```
 
@@ -823,30 +868,64 @@ crew_tbl %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="
 
 </details>
 
-<details><summary>Setup unit tests</summary>
+<details><summary>Diagnostics</summary>
+
+::: {.panel-tabset}
+
+### Setup unit tests
 
 ```{r}
 #| label: setup-unit-tests-table
 #| echo: false
 setwd(root_dir)
+if (!all(targets::tar_exist_objects(c("setup_unit_tests")))) {
+  targets::tar_make(reporter = "verbose_positives", garbage_collection = TRUE)
+}
+if (!all(targets::tar_exist_objects(c("setup_unit_tests")))) {
+  stop("Required targets were not built: `setup_unit_tests` is missing. Check earlier `tar_make()` output.", call. = FALSE)
+}
 pt <- tar_read(setup_unit_tests)
 pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
 ```
 
+### Data quality checks
+
+```{r}
+#| label: data-unit-tests-table
+#| echo: false
+setwd(root_dir)
+if (!all(targets::tar_exist_objects(c("data_unit_tests")))) {
+  targets::tar_make(reporter = "verbose_positives", garbage_collection = TRUE)
+}
+if (!all(targets::tar_exist_objects(c("data_unit_tests")))) {
+  stop("Required targets were not built: `data_unit_tests` is missing. Check earlier `tar_make()` output.", call. = FALSE)
+}
+pt <- tar_read(data_unit_tests)
+pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
+```
+
+### Report checks
+
+```{r}
+#| label: report-unit-tests-table-pipeline
+#| echo: false
+setwd(root_dir)
+if (!all(targets::tar_exist_objects(c("report_unit_tests")))) {
+  targets::tar_make(reporter = "verbose_positives", garbage_collection = TRUE)
+}
+if (!all(targets::tar_exist_objects(c("report_unit_tests")))) {
+  stop("Required targets were not built: `report_unit_tests` is missing. Check earlier `tar_make()` output.", call. = FALSE)
+}
+pt <- tar_read(report_unit_tests)
+pt %>% dplyr::select(test, Passed = passed_html) %>%
+  knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
+```
+
+:::
+
 </details>
 
 <!-- #################### REPORT #################### -->
-
-```{r}
-#| label: data-source-notice
-#| echo: false
-#| results: asis
-# Show notice when pipeline uses anonymised/synthetic data (e.g. from structure.rds).
-ds <- tar_read(data_source)
-if (isTRUE(ds$use_anonymised)) {
-  cat('::: {.callout-note}\n## Data source\nThis report uses **anonymised/synthetic data** (simulated from structure). No real observations are shown.\n:::\n')
-}
-```
 
 ```{r}
 #| label: doc-labels
@@ -857,56 +936,177 @@ doc_covariate <- "v2"
 doc_mediator <- "v3"
 doc_exposure <- "v4"
 doc_log_outcome <- "log(v1)"
-ds <- tar_read(data_source)
-doc_dataset_name <- if (isTRUE(ds$use_anonymised)) "synthetic data" else "imported data"
+rf_doc <- tar_read(raw_data_file)
+doc_dataset_name <- if (isTRUE(rf_doc$exists)) "imported data" else "synthetic data"
 ```
 
 # Experiment and Data
 
 The analysis uses the **`r doc_dataset_name`** dataset. The outcome is **`r doc_outcome`**, with **`r doc_exposure`** (exposure), **`r doc_mediator`** (mediator), and **`r doc_covariate`** (covariate) as predictors. After cleaning and keeping complete cases on the outcome and covariate, the data were used to model **`r doc_outcome`** as a function of **`r doc_mediator`**, **`r doc_exposure`**, **`r doc_covariate`**, and the **`r doc_mediator`**–**`r doc_exposure`** interaction.
 
-# Methods
-
-A Bayesian regression model was fitted in R (R Core Team 2022) using the **brms** package (Bürkner, 2017) with the **cmdstanr** backend. The model was a **structural equation model** with two equations: (1) **`r doc_mediator`** is regressed on **`r doc_exposure`** (exposure affects mediator); (2) **`r doc_log_outcome`** (outcome log-transformed) is regressed on **`r doc_mediator`**, **`r doc_exposure`**, their **interaction**, and **`r doc_covariate`**, with a Gaussian distribution. So **`r doc_exposure`** affects the outcome both directly and indirectly via **`r doc_mediator`**, and **`r doc_covariate`** is an additional predictor (`r doc_mediator` ~ `r doc_exposure`; `r doc_log_outcome` ~ `r doc_mediator` * `r doc_exposure` + `r doc_covariate`). The model was fitted with 4 chains, 1000 warmup and 2000 iterations per chain. Model validation relied on posterior predictive checks (density overlay) and standard MCMC diagnostics (Rhat and effective sample size) (McElreath, 2020).
-
-<details><summary>Why Bayesian?</summary>
-- This framework is particularly useful for the analysis of complex data sets with temporal and spatial (hierarchical) structures and is highly flexible to model the data generating process: <https://doi.org/10.1007/s10144-015-0503-4></details>
-
-## Analysis
+## Data exploration
 
 ::: {.panel-tabset}
 
-## Data
+### Overview
 
 ```{r}
-#| label: data-struct-preview
+#| label: data-explore-overview
+#| echo: false
+rf <- tar_read(raw_data_file)
+d <- tar_read(data_struct)
+mode_lbl <- if (isTRUE(rf$exists)) {
+  "Imported CSV"
+} else {
+  "Synthetic (simulated from structure or defaults)"
+}
+overview <- tibble::tibble(
+  Item = c(
+    "Source mode",
+    "Import path",
+    "Import file on disk",
+    "Rows (analysis table)",
+    "Columns"
+  ),
+  Value = c(
+    mode_lbl,
+    rf$path,
+    if (isTRUE(rf$exists)) "yes" else "no",
+    as.character(nrow(d)),
+    as.character(ncol(d))
+  )
+)
+if (isTRUE(rf$exists) && nzchar(rf$path) && file.exists(rf$path)) {
+  overview <- rbind(
+    overview,
+    tibble::tibble(Item = "File size (bytes)", Value = as.character(file.size(rf$path)))
+  )
+}
+knitr::kable(overview, format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
+```
+
+### Columns
+
+```{r}
+#| label: data-explore-columns
+#| echo: false
+d <- tar_read(data_struct)
+nms <- names(d)
+col_tbl <- do.call(
+  rbind,
+  lapply(seq_along(d), function(i) {
+    x <- d[[i]]
+    tibble::tibble(
+      name = nms[[i]],
+      class = paste(class(x), collapse = ", "),
+      n_missing = sum(is.na(x)),
+      mean = if (is.numeric(x)) suppressWarnings(mean(x, na.rm = TRUE)) else NA_real_,
+      min = if (is.numeric(x)) suppressWarnings(min(x, na.rm = TRUE)) else NA_real_,
+      max = if (is.numeric(x)) suppressWarnings(max(x, na.rm = TRUE)) else NA_real_
+    )
+  })
+)
+knitr::kable(col_tbl, format = "html", digits = 4, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
+```
+
+### Structure
+
+```{r}
+#| label: data-explore-structure
 #| echo: false
 d <- tar_read(data_struct)
 str(d)
 head(d)
 ```
 
-## Summary
+:::
+
+# Methods
+
+A Bayesian regression model was fitted in R [@r2022] using the **brms** package [@burkner2017] with the **cmdstanr** backend. The model was a **structural equation model** with two equations: (1) **`r doc_mediator`** is regressed on **`r doc_exposure`** (exposure affects mediator); (2) **`r doc_log_outcome`** (outcome log-transformed) is regressed on **`r doc_mediator`**, **`r doc_exposure`**, their **interaction**, and **`r doc_covariate`**, with a Gaussian distribution. So **`r doc_exposure`** affects the outcome both directly and indirectly via **`r doc_mediator`**, and **`r doc_covariate`** is an additional predictor (`r doc_mediator` ~ `r doc_exposure`; `r doc_log_outcome` ~ `r doc_mediator` * `r doc_exposure` + `r doc_covariate`). The model was fitted with 4 chains, 1000 warmup and 2000 iterations per chain. Model validation relied on posterior predictive checks (density overlay) and standard MCMC diagnostics (Rhat and effective sample size) [@mcelreath2020].
+
+## Analysis
+
+::: {#analysis-tabs .panel-tabset}
+
+### DAG
 
 ```{r}
-#| label: data-summary-table
+#| label: causal-dag
 #| echo: false
-library(tidyverse)
-d <- tar_read(data_struct)
-d %>%
-  select(where(is.numeric)) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  group_by(variable) %>%
-  summarise(
-    mean = mean(value, na.rm = TRUE),
-    median = median(value, na.rm = TRUE),
-    range = paste(round(min(value, na.rm = TRUE), 2), "-", round(max(value, na.rm = TRUE), 2)),
-    sd = sd(value, na.rm = TRUE),
-    .groups = "drop"
-  )
+#| out-width: 50%
+#| fig-height: 4.5
+#| fig-width: 9
+#| fig-align: center
+setwd(root_dir)
+d <- tar_read(dag)
+ggplot2::ggsave(file.path(plot_dir, "causal_dag.png"), d, width = 6, height = 4.5, dpi = 600)
+d
 ```
 
-## Models
+Figure 1: Causal diagram (DAG): exposure (`r doc_exposure`), mediator (`r doc_mediator`), covariate (`r doc_covariate`), and outcome (`r doc_log_outcome`).
+
+### Effect plots
+
+```{r}
+#| label: effect-plot-by-exposure
+#| echo: false
+#| message: false
+#| fig-show: hold
+#| fig-width: 8
+#| fig-height: 4
+#| out-width: 100%
+#| classes: "fig-squeeze"
+setwd(root_dir)
+p_eff_temp <- tar_read(eff_wind_by_temp)
+p_eff_solar <- tar_read(eff_wind_by_solar_r)
+ggplot2::ggsave(file.path(plot_dir, "effect_v3_by_v4.png"), p_eff_temp, width = 8, height = 4, dpi = 600)
+ggplot2::ggsave(file.path(plot_dir, "effect_v3_by_v2.png"), p_eff_solar, width = 8, height = 4, dpi = 600)
+p_eff_temp
+```
+
+Figure 3: Interaction effect of `r doc_mediator` on `r doc_outcome` at low vs high `r doc_exposure` (25th and 75th percentiles). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates `r doc_exposure` level.
+
+```{r}
+#| label: effect-plot-by-covariate
+#| echo: false
+#| message: false
+#| fig-show: hold
+#| fig-width: 8
+#| fig-height: 4
+#| out-width: 100%
+#| classes: "fig-squeeze"
+setwd(root_dir)
+p_eff_solar <- tar_read(eff_wind_by_solar_r)
+p_eff_solar
+```
+
+Figure 4: Effect of `r doc_mediator` on `r doc_outcome` at low vs high `r doc_covariate` (25th and 75th percentiles). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates `r doc_covariate` level.
+
+### Raw plots
+
+```{r}
+#| label: raw-plots
+#| echo: false
+#| message: false
+#| fig-width: 8
+#| fig-height: 7
+#| out-width: 100%
+setwd(root_dir)
+p_wind <- tar_read(plot_ozone_wind)
+p_temp <- tar_read(plot_ozone_temp)
+p_solar <- tar_read(plot_ozone_solar_r)
+p_combined <- p_wind + p_temp + p_solar + plot_layout(ncol = 2)
+ggplot2::ggsave(file.path(plot_dir, "v1_vs_v3_raw.png"), p_wind, width = 4, height = 3.5, dpi = 600)
+ggplot2::ggsave(file.path(plot_dir, "v1_vs_v4_raw.png"), p_temp, width = 4, height = 3.5, dpi = 600)
+ggplot2::ggsave(file.path(plot_dir, "v1_vs_v2_raw.png"), p_solar, width = 4, height = 3.5, dpi = 600)
+ggplot2::ggsave(file.path(plot_dir, "raw_plots_v1_v2_v3_v4.png"), p_combined, width = 8, height = 7, dpi = 600)
+p_combined
+```
+
+Figure 2: Observed `r doc_outcome` (points) and posterior predictions from the Gaussian model for `r doc_log_outcome`, back-transformed to `r doc_outcome` scale. Left: `r doc_outcome` vs `r doc_mediator`. Centre: `r doc_outcome` vs `r doc_exposure`. Right: `r doc_outcome` vs `r doc_covariate`. Shaded bands show the 95% credible interval; the solid line is the posterior median.
+
+### Models
 
 ```{r}
 #| label: fit-print
@@ -926,7 +1126,7 @@ tryCatch(print(fit_obj), error = function(e) {
 tar_read(stan_code)
 ```
 
-## Validation
+### Validation
 
 ```{r}
 #| label: pp-check-plot
@@ -941,7 +1141,7 @@ ggplot2::ggsave(file.path(plot_dir, "pp_check.png"), p, width = 4, height = 2, d
 p
 ```
 
-## Analysis unit tests
+### Unit tests
 
 ```{r}
 #| label: analysis-unit-tests-table
@@ -950,8 +1150,6 @@ setwd(root_dir)
 pt <- tar_read(unit_tests)
 pt %>% dplyr::select(test, Passed = passed_html) %>% knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
 ```
-
-:::
 
 ```{r}
 #| label: export-tables
@@ -976,112 +1174,24 @@ summary_tbl <- d %>%
 analysis_unit_tests_tbl <- tar_read(unit_tests)
 setup_unit_tests_tbl <- tar_read(setup_unit_tests)
 tables_path <- file.path(tables_dir, "1_targets_report_tables.xlsx")
-writexl::write_xlsx(list(Summary = summary_tbl, Analysis_unit_tests = analysis_unit_tests_tbl, Setup_unit_tests = setup_unit_tests_tbl), tables_path)
+data_unit_tests_tbl <- tar_read(data_unit_tests)
+writexl::write_xlsx(list(
+  Summary = summary_tbl,
+  Data_unit_tests = data_unit_tests_tbl,
+  Analysis_unit_tests = analysis_unit_tests_tbl,
+  Setup_unit_tests = setup_unit_tests_tbl
+), tables_path)
 ```
 
-### Causal diagram
-<details><summary>i</summary>
-- A causal diagram (DAG) is a flowchart that maps out the causal relationships between the exposure (X) and outcome (Y), along with additional variables that may affect the X and Y association.
+:::
 
-- As such a causal diagram is a graphical representation of the hypothesis and summary of a modeling approach.
-
-- A biologist's guide to model selection and causal inference: <https://doi.org/10.1098/rspb.2020.2815></details>
-```{r}
-#| label: causal-dag
-#| echo: false
-#| out-width: 50%
-#| fig-height: 4.5
-#| fig-width: 9
-#| fig-align: center
-setwd(root_dir)
-d <- tar_read(dag)
-ggplot2::ggsave(file.path(plot_dir, "causal_dag.png"), d, width = 6, height = 4.5, dpi = 600)
-d
-```
-
-Figure 1: Causal diagram (DAG): exposure (`r doc_exposure`), mediator (`r doc_mediator`), covariate (`r doc_covariate`), and outcome (`r doc_log_outcome`).
-
-### Raw plots
-```{r}
-#| label: raw-plots
-#| echo: false
-#| message: false
-#| fig-width: 8
-#| fig-height: 7
-#| out-width: 100%
-setwd(root_dir)
-p_wind <- tar_read(plot_ozone_wind)
-p_temp <- tar_read(plot_ozone_temp)
-p_solar <- tar_read(plot_ozone_solar_r)
-p_combined <- p_wind + p_temp + p_solar + plot_layout(ncol = 2)
-ggplot2::ggsave(file.path(plot_dir, "v1_vs_v3_raw.png"), p_wind, width = 4, height = 3.5, dpi = 600)
-ggplot2::ggsave(file.path(plot_dir, "v1_vs_v4_raw.png"), p_temp, width = 4, height = 3.5, dpi = 600)
-ggplot2::ggsave(file.path(plot_dir, "v1_vs_v2_raw.png"), p_solar, width = 4, height = 3.5, dpi = 600)
-ggplot2::ggsave(file.path(plot_dir, "raw_plots_v1_v2_v3_v4.png"), p_combined, width = 8, height = 7, dpi = 600)
-p_combined
-```
-Figure 2: Observed `r doc_outcome` (points) and posterior predictions from the Gaussian model for `r doc_log_outcome`, back-transformed to `r doc_outcome` scale. Left: `r doc_outcome` vs `r doc_mediator`. Centre: `r doc_outcome` vs `r doc_exposure`. Right: `r doc_outcome` vs `r doc_covariate`. Shaded bands show the 95% credible interval; the solid line is the posterior median.
-
-### Effect plots
-```{r}
-#| label: effect-plot-by-exposure
-#| echo: false
-#| message: false
-#| fig-show: hold
-#| fig-width: 8
-#| fig-height: 4
-#| out-width: 100%
-#| classes: "fig-squeeze"
-setwd(root_dir)
-p_eff_temp <- tar_read(eff_wind_by_temp)
-p_eff_solar <- tar_read(eff_wind_by_solar_r)
-ggplot2::ggsave(file.path(plot_dir, "effect_v3_by_v4.png"), p_eff_temp, width = 8, height = 4, dpi = 600)
-ggplot2::ggsave(file.path(plot_dir, "effect_v3_by_v2.png"), p_eff_solar, width = 8, height = 4, dpi = 600)
-p_eff_temp
-```
-Figure 3: Interaction effect of `r doc_mediator` on `r doc_outcome` at low vs high `r doc_exposure` (25th and 75th percentiles). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates `r doc_exposure` level.
-
-```{r}
-#| label: effect-plot-by-covariate
-#| echo: false
-#| message: false
-#| fig-show: hold
-#| fig-width: 8
-#| fig-height: 4
-#| out-width: 100%
-#| classes: "fig-squeeze"
-setwd(root_dir)
-p_eff_solar <- tar_read(eff_wind_by_solar_r)
-p_eff_solar
-```
-Figure 4: Effect of `r doc_mediator` on `r doc_outcome` at low vs high `r doc_covariate` (25th and 75th percentiles). Grey shading is the 95% credible interval; the black line is the posterior median. Legend indicates `r doc_covariate` level.
-
-## Results
+# Results
 
 The causal diagram (Figure 1) encodes the assumption that `r doc_mediator`, `r doc_exposure`, and `r doc_covariate` influence `r doc_outcome`. The raw plots (Figure 2, 2-column layout) show that observed `r doc_outcome` tends to decrease with higher `r doc_mediator` and to increase with higher `r doc_exposure` and `r doc_covariate`, with the model capturing these patterns and uncertainty. The interaction effect plot (Figure 3) shows how the effect of `r doc_mediator` on `r doc_outcome` differs at low vs high `r doc_exposure`; Figure 4 shows the effect of `r doc_mediator` at low vs high `r doc_covariate`. Non-parallel curves indicate an interaction. In this Bayesian framework, a predictor is typically considered to have a meaningful effect when its 95% credible interval excludes zero.
 
-# References
+# Session information
 
-Bürkner, P.C., (2017). brms: An R Package for Bayesian Multilevel Models Using Stan. Journal of Statistical Software, 80(1), 1-28. <https://econpapers.repec.org/article/jssjstsof/v_3a080_3ai01.htm>
-
-McElreath, R. (2020). Statistical rethinking: A Bayesian course with examples in R and Stan. Chapman and Hall/CRC.
-
-R Core Team (2022). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>
-
-<details><summary>Report unit tests</summary>
-
-```{r}
-#| label: report-unit-tests-table
-#| echo: false
-setwd(root_dir)
-pt <- tar_read(report_unit_tests)
-pt %>% dplyr::select(test, Passed = passed_html) %>%
-  knitr::kable(format = "html", escape = FALSE, table.attr = 'class="table" style="table-layout:fixed; width:100%; max-width:100%"')
-```
-
-</details>
-
-<details><summary>Session Information</summary>
+<details><summary>Expand session information</summary>
 ```{r}
 #| label: session-info
 # Template version 2.6

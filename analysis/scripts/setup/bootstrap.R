@@ -3,17 +3,23 @@
 
 cat("== Bootstrap: setting up project ==\n")
 
+repos <- c(CRAN = "https://cloud.r-project.org/")
+if (!requireNamespace("here", quietly = TRUE)) {
+  utils::install.packages("here", repos = repos, quiet = TRUE)
+}
+
 # 1. Ensure required directories exist
-dirs <- c(
-  "analysis/data",
-  "analysis/data/import",
-  "analysis/data/simulate",
-  "analysis/output/models",
-  "analysis/output/plots",
-  "analysis/output/tables",
-  "docs"
+dir_parts <- list(
+  c("analysis", "data"),
+  c("analysis", "data", "import"),
+  c("analysis", "data", "simulate"),
+  c("analysis", "output", "models"),
+  c("analysis", "output", "plots"),
+  c("analysis", "output", "tables"),
+  c("docs")
 )
-for (d in dirs) {
+for (parts in dir_parts) {
+  d <- do.call(here::here, as.list(parts))
   if (!dir.exists(d)) {
     dir.create(d, recursive = TRUE)
     cat("  Created:", d, "\n")
@@ -21,12 +27,12 @@ for (d in dirs) {
 }
 
 # 2. Install packages (renv preferred, fallback to install_packages.R)
-if (file.exists("renv.lock") && requireNamespace("renv", quietly = TRUE)) {
+if (file.exists(here::here("renv.lock")) && requireNamespace("renv", quietly = TRUE)) {
   cat("== Restoring packages from renv.lock ==\n")
-  renv::restore(prompt = FALSE)
+  renv::restore(project = here::here(), prompt = FALSE)
 } else {
   cat("== Installing packages via install_packages.R ==\n")
-  source("analysis/scripts/setup/install_packages.R")
+  source(here::here("analysis", "scripts", "setup", "install_packages.R"))
 }
 
 # 3. CmdStan: on Linux (cluster) use known path if it exists; else CMDSTAN_PATH if set; otherwise install if not present
@@ -50,7 +56,7 @@ if (requireNamespace("cmdstanr", quietly = TRUE)) {
 }
 
 # 4. Destroy stale targets store (meta from another machine won't work)
-pipeline_dir <- "analysis/scripts/pipeline"
+pipeline_dir <- here::here("analysis", "scripts", "pipeline")
 if (dir.exists(file.path(pipeline_dir, "_targets"))) {
   cat("== Clearing stale targets store ==\n")
   old_wd <- setwd(pipeline_dir)

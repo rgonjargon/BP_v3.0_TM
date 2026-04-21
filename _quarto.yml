@@ -1,0 +1,11 @@
+# Quarto project at repo root (not under analysis/scripts/).
+# A _quarto.yml inside analysis/scripts/ makes the here package treat scripts/ as the
+# project root, which breaks targets that use here::here("README.md") (root README).
+project:
+  type: default
+
+bibliography: analysis/scripts/references.bib
+link-citations: true
+
+resources:
+  - analysis/scripts/references.bib
