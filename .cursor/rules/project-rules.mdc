@@ -87,3 +87,13 @@ One concern per section. Follow these when editing or adding to the project.
 
 - **Do not modify the unit tests.** The definitions of `unit_tests` and `setup_unit_tests` (and their assertions) must not be changed by Cursor or other edits.
 - Fix the project or pipeline so that tests pass; do not alter the test logic or expectations.
+
+---
+
+## Other Cursor rules (scoped)
+
+- **`quarto-project-root.mdc`** — root `_quarto.yml` only; no `analysis/scripts/_quarto.yml`; `here()` / bibliography contract.
+- **`targets-pipeline.mdc`** — `1_targets.qmd` setup chunk, pipeline directory, outputs paths.
+- **`r-renv-cmdstan.mdc`** — `renv.lock`, setup scripts, portable CmdStan.
+
+Keep **this** file as `alwaysApply: true`. Do not split it or set `alwaysApply: false` here without updating **`setup_unit_tests`** in `analysis/scripts/1_targets.qmd` (it greps this rules file for expected content).

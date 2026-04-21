@@ -1,0 +1,18 @@
+---
+description: Quarto project at repo root only; bibliography and here() contract
+globs:
+  - _quarto.yml
+  - analysis/scripts/**/*.qmd
+alwaysApply: false
+---
+
+# Quarto project root and `here()`
+
+- Keep **one** Quarto project file at the **repository root**: `_quarto.yml`. It should declare `bibliography: analysis/scripts/references.bib`, `link-citations: true`, and list `analysis/scripts/references.bib` under `resources` so renders find the bib.
+- **Do not** add `analysis/scripts/_quarto.yml`. A project file under `analysis/scripts/` makes **`here::here()`** treat that folder as the project root and breaks targets that expect `here("README.md")` at the repo root (see comments in root `_quarto.yml`).
+- When adding citations: extend `analysis/scripts/references.bib` and keep paths aligned with root `_quarto.yml`.
+
+## Related rules
+
+- Directory layout, reports-only Quarto, tables/figures/models paths: `.cursor/rules/project-rules.mdc` (`alwaysApply: true`).
+- Keep `project-rules.mdc` as a single always-on file unless you intentionally change `setup_unit_tests` in `analysis/scripts/1_targets.qmd` (it greps the rules file for expected keywords).

@@ -1,0 +1,13 @@
+---
+description: renv lockfile and CmdStan path conventions for setup scripts
+globs:
+  - renv.lock
+  - analysis/scripts/setup/**/*.R
+  - .Rprofile
+alwaysApply: false
+---
+
+# renv and CmdStan
+
+- After changing R package dependencies for the pipeline or report, prefer **`renv::restore()`** on a fresh machine and commit an updated **`renv.lock`** when new packages are required for CI or collaborators.
+- **CmdStan:** do not commit machine-specific absolute paths without an override. Prefer the environment variable **`CMDSTAN_PATH`**, **`cmdstanr::set_cmdstan_path()`** in a local/session block, or documented cluster defaults (see root `README.md`). Setup scripts (`analysis/scripts/setup/`) should remain portable.

@@ -1,0 +1,14 @@
+---
+description: targets store layout, knitr root.dir, outputs; do not alter guard tests
+globs:
+  - analysis/scripts/1_targets.qmd
+  - analysis/scripts/pipeline/**/*.R
+alwaysApply: false
+---
+
+# Targets pipeline
+
+- **Do not modify** the definitions or expectations of `unit_tests` and `setup_unit_tests` in `1_targets.qmd`. Fix the project so tests pass. See `.cursor/rules/project-rules.mdc` (“Unit tests: do not modify”).
+- Pipeline code lives under **`analysis/scripts/pipeline/`** (`_targets.R`, `_targets/`, `_targets_r/`). The report’s setup chunk resolves `pipeline_dir`, sets **`knitr::opts_knit$set(root.dir = root_dir)`** to that directory, and calls **`tar_unscript()`** on `_targets.R` so stale generated scripts are cleared. Preserve this pattern when editing setup.
+- New persisted outputs: **plots** → `analysis/output/plots/`, **final tables** (one `.xlsx`, one sheet per table) → `analysis/output/tables/`, **models** → `analysis/output/models/` (see `project-rules.mdc`).
+- Adding new **layout** assertions inside `setup_unit_tests` forces every `tar_make()` to satisfy them until targets invalidate—prefer documenting in README or rules unless the team wants that enforcement.
